@@ -85,7 +85,7 @@ values
     'JFK',
     'LHR',
     now() + interval '36 hours',
-    now() + interval '1 day 12 hours',
+    now() + interval '1 day 20 hours',
     'B787',
     'scheduled',
     48000.00

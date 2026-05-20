@@ -53,12 +53,12 @@ order by s.seat_number;
 -- ---------------------------------------------------------------------------
 -- 6. Reschedule (AI101 -> AI201, same seat number if exists)
 -- ---------------------------------------------------------------------------
--- select public.reschedule_booking(
---   '<booking_id>',
---   (select id from public.flights where flight_no = 'AI201'),
---   null,
---   25.00
--- );
+ select public.reschedule_booking(
+   '<booking_id>',
+   (select id from public.flights where flight_no = 'AI201'),
+   null,
+   25.00
+ );
 
 -- ---------------------------------------------------------------------------
 -- 7. Seat availability after booking
