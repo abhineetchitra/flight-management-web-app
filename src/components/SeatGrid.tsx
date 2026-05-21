@@ -75,7 +75,7 @@ function getSeatClasses(state: SeatState) {
     case 'occupied':
       return 'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed opacity-70'
     case 'selected':
-      return 'bg-blue-600 border-blue-700 text-white shadow-md'
+      return 'bg-blue-600 border-blue-700 text-white shadow-md ring-2 ring-blue-300'
     case 'your-seat':
       return 'bg-emerald-600 border-emerald-700 text-white shadow-md'
     default:
@@ -96,8 +96,32 @@ function SeatSection({
 }) {
   const selectedSeat = useFlightStore((s) => s.selectedSeat)
   const setSelectedSeat = useFlightStore((s) => s.setSelectedSeat)
+  const setBookingStep = useFlightStore((s) => s.setBookingStep)
 
   const rows = [...new Set(seats.map((seat) => seat.row))]
+
+  function handleSeatClick(seat: SeatItem) {
+    if (!seat.isAvailable) return
+    if (bookedSeatId === seat.id) return
+
+    // ✅ Optimistic selection: update Zustand immediately
+    if (selectedSeat?.id === seat.id) {
+      setSelectedSeat(null)
+      return
+    }
+
+    setSelectedSeat({
+      id: seat.id,
+      flight_id: '',
+      seat_number: seat.seatNumber,
+      class: seat.class,
+      is_available: seat.isAvailable,
+      extra_fee: seat.extra_fee,
+    })
+
+    // Optional: move booking flow forward
+    // setBookingStep('passenger-details')
+  }
 
   return (
     <section className="space-y-4">
@@ -149,16 +173,7 @@ function SeatSection({
                       type="button"
                       disabled={isDisabled}
                       title={`${seat.class} • Extra fee ₹${seat.extra_fee}`}
-                      onClick={() =>
-                        setSelectedSeat({
-                          id: seat.id,
-                          flight_id: '',
-                          seat_number: seat.seatNumber,
-                          class: seat.class,
-                          is_available: seat.isAvailable,
-                          extra_fee: seat.extra_fee,
-                        })
-                      }
+                      onClick={() => handleSeatClick(seat)}
                       className={`rounded-md border px-2 py-3 text-center text-xs font-medium transition ${getSeatClasses(seatState)}`}
                     >
                       {seat.seatNumber}
@@ -186,16 +201,7 @@ function SeatSection({
                       type="button"
                       disabled={isDisabled}
                       title={`${seat.class} • Extra fee ₹${seat.extra_fee}`}
-                      onClick={() =>
-                        setSelectedSeat({
-                          id: seat.id,
-                          flight_id: '',
-                          seat_number: seat.seatNumber,
-                          class: seat.class,
-                          is_available: seat.isAvailable,
-                          extra_fee: seat.extra_fee,
-                        })
-                      }
+                      onClick={() => handleSeatClick(seat)}
                       className={`rounded-md border px-2 py-3 text-center text-xs font-medium transition ${getSeatClasses(seatState)}`}
                     >
                       {seat.seatNumber}
@@ -212,6 +218,8 @@ function SeatSection({
 }
 
 export default function SeatGrid({ bookedSeatId = 'economy-9A' }: SeatGridProps) {
+  const selectedSeat = useFlightStore((s) => s.selectedSeat)
+
   const firstClassSeats = staticSeats.filter((seat) => seat.class === 'first')
   const businessClassSeats = staticSeats.filter((seat) => seat.class === 'business')
   const economySeats = staticSeats.filter((seat) => seat.class === 'economy')
@@ -231,6 +239,18 @@ export default function SeatGrid({ bookedSeatId = 'economy-9A' }: SeatGridProps)
         <span className="rounded-full border border-emerald-600 bg-emerald-600 px-3 py-1 text-white">
           Your Seat
         </span>
+      </div>
+
+      <div className="rounded-xl border bg-slate-50 p-4">
+        <p className="text-sm font-medium text-slate-700">Temporary selection</p>
+        {selectedSeat ? (
+          <p className="mt-1 text-sm text-slate-600">
+            Seat {selectedSeat.seat_number} selected • {selectedSeat.class} • Extra fee ₹
+            {selectedSeat.extra_fee}
+          </p>
+        ) : (
+          <p className="mt-1 text-sm text-slate-500">No seat selected yet.</p>
+        )}
       </div>
 
       <SeatSection
