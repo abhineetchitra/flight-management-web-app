@@ -25,5 +25,5 @@ create table public.bookings (
   created_at timestamptz default now(),
 
   constraint bookings_status_check
-    check (status in ('pending', 'confirmed', 'cancelled'))
+    check (status in ('pending', 'confirmed', 'cancelled', 'rescheduled'))
 );
