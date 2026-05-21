@@ -1,8 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-// ── Types ──────────────────────────────────────────────────────────────────
-
 interface SearchQuery {
   origin: string
   destination: string
@@ -31,43 +29,42 @@ interface Seat {
   extra_fee: number
 }
 
-interface PassengerFormData {
+interface PassengerData {
   full_name: string
   nationality: string
   dob: string
-  // ⚠️ passport_no is intentionally NOT here — excluded from store (sensitive)
+  passport_no?: string
 }
 
-type BookingStep = 'search' | 'results' | 'seats' | 'passenger-details' | 'confirmation'
-
-// ── Store Interface ────────────────────────────────────────────────────────
+type BookingStep =
+  | 'search'
+  | 'results'
+  | 'seat-selection'
+  | 'passenger-details'
+  | 'confirmation'
 
 interface FlightStore {
-  // State
   searchQuery: SearchQuery | null
   selectedFlight: Flight | null
   selectedSeat: Seat | null
   bookingStep: BookingStep
-  passengerFormData: PassengerFormData | null
+  passengerData: PassengerData | null
 
-  // Actions
-  setSearchQuery: (query: SearchQuery) => void
+  setSearchQuery: (query: SearchQuery | null) => void
   setSelectedFlight: (flight: Flight | null) => void
-  setSelectedSeat: (seat: Seat | null) => void   // ✅ optimistic seat selection
+  setSelectedSeat: (seat: Seat | null) => void
   setBookingStep: (step: BookingStep) => void
-  setPassengerFormData: (data: PassengerFormData) => void
-  reset: () => void  // triggered on cancellation or logout
+  setPassengerData: (data: PassengerData | null) => void
+  reset: () => void
 }
-
 
 const initialState = {
   searchQuery: null,
   selectedFlight: null,
   selectedSeat: null,
   bookingStep: 'search' as BookingStep,
-  passengerFormData: null,
+  passengerData: null,
 }
-
 
 export const useFlightStore = create<FlightStore>()(
   persist(
@@ -76,22 +73,26 @@ export const useFlightStore = create<FlightStore>()(
 
       setSearchQuery: (query) => set({ searchQuery: query }),
       setSelectedFlight: (flight) => set({ selectedFlight: flight }),
-
       setSelectedSeat: (seat) => set({ selectedSeat: seat }),
-
       setBookingStep: (step) => set({ bookingStep: step }),
-      setPassengerFormData: (data) => set({ passengerFormData: data }),
+      setPassengerData: (data) => set({ passengerData: data }),
 
       reset: () => set(initialState),
     }),
     {
-      name: 'flight-booking-storage',
+      name: 'flight-store',
       partialize: (state) => ({
         searchQuery: state.searchQuery,
         selectedFlight: state.selectedFlight,
         selectedSeat: state.selectedSeat,
         bookingStep: state.bookingStep,
-    
+        passengerData: state.passengerData
+          ? {
+              full_name: state.passengerData.full_name,
+              nationality: state.passengerData.nationality,
+              dob: state.passengerData.dob,
+            }
+          : null,
       }),
     }
   )
