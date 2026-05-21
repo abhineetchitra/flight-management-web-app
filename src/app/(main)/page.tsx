@@ -27,7 +27,9 @@ export default function HomePage() {
     })
 
     setBookingStep('results')
-    router.push('/flights')
+    router.push(
+        `/flights?origin=${origin.toUpperCase()}&destination=${destination.toUpperCase()}&date=${date}&passengers=${passengerCount}`
+      )
   }
 
   return (
