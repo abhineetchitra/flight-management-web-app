@@ -1,5 +1,7 @@
 'use client'
 
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { useFlightStore } from '@/store/useFlightStore'
 
 type SeatClass = 'first' | 'business' | 'economy'
@@ -7,57 +9,30 @@ type SeatState = 'available' | 'occupied' | 'selected' | 'your-seat'
 
 interface SeatItem {
   id: string
-  seatNumber: string
-  row: number
-  column: string
+  flight_id: string
+  seat_number: string
   class: SeatClass
-  isAvailable: boolean
+  is_available: boolean
   extra_fee: number
 }
 
 interface SeatGridProps {
+  flightId: string
   bookedSeatId?: string | null
 }
 
-const seatColumns = ['A', 'B', 'C', 'D', 'E', 'F']
+function parseSeat(seatNumber: string) {
+  const match = seatNumber.match(/^(\d+)([A-Z])$/)
 
-const staticSeats: SeatItem[] = [
-  ...Array.from({ length: 2 }, (_, i) =>
-    seatColumns.map((col) => ({
-      id: `first-${i + 1}${col}`,
-      seatNumber: `${i + 1}${col}`,
-      row: i + 1,
-      column: col,
-      class: 'first' as SeatClass,
-      isAvailable: !['1C', '2D'].includes(`${i + 1}${col}`),
-      extra_fee: 5000,
-    }))
-  ).flat(),
+  if (!match) {
+    return { row: 0, column: '' }
+  }
 
-  ...Array.from({ length: 4 }, (_, i) =>
-    seatColumns.map((col) => ({
-      id: `business-${i + 3}${col}`,
-      seatNumber: `${i + 3}${col}`,
-      row: i + 3,
-      column: col,
-      class: 'business' as SeatClass,
-      isAvailable: !['3A', '4F'].includes(`${i + 3}${col}`),
-      extra_fee: 2500,
-    }))
-  ).flat(),
-
-  ...Array.from({ length: 12 }, (_, i) =>
-    seatColumns.map((col) => ({
-      id: `economy-${i + 7}${col}`,
-      seatNumber: `${i + 7}${col}`,
-      row: i + 7,
-      column: col,
-      class: 'economy' as SeatClass,
-      isAvailable: !['7B', '8E', '10C', '12D'].includes(`${i + 7}${col}`),
-      extra_fee: 0,
-    }))
-  ).flat(),
-]
+  return {
+    row: Number(match[1]),
+    column: match[2],
+  }
+}
 
 function getSeatState(
   seat: SeatItem,
@@ -65,7 +40,7 @@ function getSeatState(
   bookedSeatId: string | null
 ): SeatState {
   if (bookedSeatId === seat.id) return 'your-seat'
-  if (!seat.isAvailable) return 'occupied'
+  if (!seat.is_available) return 'occupied'
   if (selectedSeatId === seat.id) return 'selected'
   return 'available'
 }
@@ -85,26 +60,24 @@ function getSeatClasses(state: SeatState) {
 
 function SeatSection({
   title,
-  seatClass,
   seats,
   bookedSeatId,
 }: {
   title: string
-  seatClass: SeatClass
   seats: SeatItem[]
   bookedSeatId?: string | null
 }) {
   const selectedSeat = useFlightStore((s) => s.selectedSeat)
   const setSelectedSeat = useFlightStore((s) => s.setSelectedSeat)
-  const setBookingStep = useFlightStore((s) => s.setBookingStep)
 
-  const rows = [...new Set(seats.map((seat) => seat.row))]
+  const parsedRows = [...new Set(seats.map((seat) => parseSeat(seat.seat_number).row))].sort(
+    (a, b) => a - b
+  )
 
   function handleSeatClick(seat: SeatItem) {
-    if (!seat.isAvailable) return
+    if (!seat.is_available) return
     if (bookedSeatId === seat.id) return
 
-    // ✅ Optimistic selection: update Zustand immediately
     if (selectedSeat?.id === seat.id) {
       setSelectedSeat(null)
       return
@@ -112,24 +85,19 @@ function SeatSection({
 
     setSelectedSeat({
       id: seat.id,
-      flight_id: '',
-      seat_number: seat.seatNumber,
+      flight_id: seat.flight_id,
+      seat_number: seat.seat_number,
       class: seat.class,
-      is_available: seat.isAvailable,
+      is_available: seat.is_available,
       extra_fee: seat.extra_fee,
     })
-
-    // Optional: move booking flow forward
-    // setBookingStep('passenger-details')
   }
 
   return (
     <section className="space-y-4">
       <div>
         <h2 className="text-lg font-semibold">{title}</h2>
-        <p className="text-sm text-gray-500">
-          {seatClass.charAt(0).toUpperCase() + seatClass.slice(1)} cabin
-        </p>
+        <p className="text-sm text-gray-500">{title} cabin</p>
       </div>
 
       <div className="overflow-x-auto rounded-xl border p-4">
@@ -145,8 +113,10 @@ function SeatSection({
             <div>F</div>
           </div>
 
-          {rows.map((row) => {
-            const rowSeats = seats.filter((seat) => seat.row === row)
+          {parsedRows.map((row) => {
+            const rowSeats = seats.filter(
+              (seat) => parseSeat(seat.seat_number).row === row
+            )
 
             return (
               <div
@@ -156,7 +126,10 @@ function SeatSection({
                 <div className="text-sm font-semibold text-center">{row}</div>
 
                 {['A', 'B', 'C'].map((col) => {
-                  const seat = rowSeats.find((s) => s.column === col)
+                  const seat = rowSeats.find(
+                    (s) => parseSeat(s.seat_number).column === col
+                  )
+
                   if (!seat) return <div key={col} />
 
                   const seatState = getSeatState(
@@ -165,7 +138,7 @@ function SeatSection({
                     bookedSeatId ?? null
                   )
 
-                  const isDisabled = !seat.isAvailable || bookedSeatId === seat.id
+                  const isDisabled = !seat.is_available || bookedSeatId === seat.id
 
                   return (
                     <button
@@ -176,7 +149,7 @@ function SeatSection({
                       onClick={() => handleSeatClick(seat)}
                       className={`rounded-md border px-2 py-3 text-center text-xs font-medium transition ${getSeatClasses(seatState)}`}
                     >
-                      {seat.seatNumber}
+                      {seat.seat_number}
                     </button>
                   )
                 })}
@@ -184,7 +157,10 @@ function SeatSection({
                 <div className="text-center text-xs text-gray-400">✈</div>
 
                 {['D', 'E', 'F'].map((col) => {
-                  const seat = rowSeats.find((s) => s.column === col)
+                  const seat = rowSeats.find(
+                    (s) => parseSeat(s.seat_number).column === col
+                  )
+
                   if (!seat) return <div key={col} />
 
                   const seatState = getSeatState(
@@ -193,7 +169,7 @@ function SeatSection({
                     bookedSeatId ?? null
                   )
 
-                  const isDisabled = !seat.isAvailable || bookedSeatId === seat.id
+                  const isDisabled = !seat.is_available || bookedSeatId === seat.id
 
                   return (
                     <button
@@ -204,7 +180,7 @@ function SeatSection({
                       onClick={() => handleSeatClick(seat)}
                       className={`rounded-md border px-2 py-3 text-center text-xs font-medium transition ${getSeatClasses(seatState)}`}
                     >
-                      {seat.seatNumber}
+                      {seat.seat_number}
                     </button>
                   )
                 })}
@@ -217,12 +193,79 @@ function SeatSection({
   )
 }
 
-export default function SeatGrid({ bookedSeatId = 'economy-9A' }: SeatGridProps) {
+export default function SeatGrid({
+  flightId,
+  bookedSeatId = null,
+}: SeatGridProps) {
+  const [supabase] = useState(() => createClient())
   const selectedSeat = useFlightStore((s) => s.selectedSeat)
+  const setSelectedSeat = useFlightStore((s) => s.setSelectedSeat)
 
-  const firstClassSeats = staticSeats.filter((seat) => seat.class === 'first')
-  const businessClassSeats = staticSeats.filter((seat) => seat.class === 'business')
-  const economySeats = staticSeats.filter((seat) => seat.class === 'economy')
+  const [seats, setSeats] = useState<SeatItem[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function fetchSeats() {
+      setLoading(true)
+
+      const { data, error } = await supabase
+        .from('seats')
+        .select('id, flight_id, seat_number, class, is_available, extra_fee')
+        .eq('flight_id', flightId)
+        .order('seat_number', { ascending: true })
+
+      if (!error && data) {
+        setSeats(data as SeatItem[])
+      }
+
+      setLoading(false)
+    }
+
+    fetchSeats()
+
+    const channel = supabase
+      .channel(`seats-flight-${flightId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'seats',
+          filter: `flight_id=eq.${flightId}`,
+        },
+        (payload) => {
+          const updatedSeat = payload.new as SeatItem
+
+          setSeats((prevSeats) =>
+            prevSeats.map((seat) =>
+              seat.id === updatedSeat.id ? updatedSeat : seat
+            )
+          )
+
+          const currentSelectedSeat = useFlightStore.getState().selectedSeat
+
+          if (
+            currentSelectedSeat?.id === updatedSeat.id &&
+            updatedSeat.is_available === false
+          ) {
+            setSelectedSeat(null)
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [flightId, setSelectedSeat, supabase])
+
+  const firstClassSeats = seats.filter((seat) => seat.class === 'first')
+  const businessClassSeats = seats.filter((seat) => seat.class === 'business')
+  const economySeats = seats.filter((seat) => seat.class === 'economy')
+
+  if (loading) {
+    return <p className="text-sm text-gray-500">Loading seats...</p>
+  }
 
   return (
     <div className="space-y-8">
@@ -255,19 +298,16 @@ export default function SeatGrid({ bookedSeatId = 'economy-9A' }: SeatGridProps)
 
       <SeatSection
         title="First Class"
-        seatClass="first"
         seats={firstClassSeats}
         bookedSeatId={bookedSeatId}
       />
       <SeatSection
         title="Business Class"
-        seatClass="business"
         seats={businessClassSeats}
         bookedSeatId={bookedSeatId}
       />
       <SeatSection
         title="Economy Class"
-        seatClass="economy"
         seats={economySeats}
         bookedSeatId={bookedSeatId}
       />
