@@ -18,7 +18,10 @@ export default function BookingPageClient({
   function handleContinue() {
     if (!selectedSeat || !flightId) return
     setBookingStep('passenger-details')
-    router.push(`/passenger-details?flightId=${flightId}`)
+    // ✅ pass both flightId AND seatId
+    router.push(
+      `/passenger-details?flightId=${flightId}&seatId=${selectedSeat.id}`
+    )
   }
 
   if (!flightId) {
