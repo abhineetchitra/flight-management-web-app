@@ -14,7 +14,7 @@ export default function MainLayout({
         </Link>
         <nav className="flex items-center gap-4 text-sm">
           <Link href="/">Search</Link>
-          <Link href="/my-bookings">My Bookings</Link>
+          <Link href="/bookings">My Bookings</Link>
           <LogoutButton />
         </nav>
       </header>

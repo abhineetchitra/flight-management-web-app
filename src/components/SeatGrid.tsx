@@ -48,7 +48,15 @@ function getSeatClasses(state: SeatState) {
   }
 }
 
-function SeatSection({ title, seats, bookedSeatId }: { title: string; seats: SeatItem[]; bookedSeatId?: string | null }) {
+function SeatSection({
+  title,
+  seats,
+  bookedSeatId,
+}: {
+  title: string
+  seats: SeatItem[]
+  bookedSeatId?: string | null
+}) {
   const selectedSeat = useFlightStore((s) => s.selectedSeat)
   const setSelectedSeat = useFlightStore((s) => s.setSelectedSeat)
 
@@ -82,7 +90,9 @@ function SeatSection({ title, seats, bookedSeatId }: { title: string; seats: Sea
 
       <div className="overflow-x-auto rounded-xl border p-4">
         {seats.length === 0 ? (
-          <div className="rounded-xl bg-slate-50 p-6 text-sm text-gray-500">No seats available in this cabin.</div>
+          <div className="rounded-xl bg-slate-50 p-6 text-sm text-gray-500">
+            No seats available in this cabin.
+          </div>
         ) : (
           <div className="min-w-180 space-y-3">
             <div className="grid grid-cols-8 gap-2 text-center text-xs font-medium text-gray-500">
@@ -100,8 +110,8 @@ function SeatSection({ title, seats, bookedSeatId }: { title: string; seats: Sea
               const rowSeats = seats.filter((seat) => parseSeat(seat.seat_number).row === row)
 
               return (
-                <div key={row} className="grid grid-cols-8 gap-2 items-center">
-                  <div className="text-sm font-semibold text-center">{row}</div>
+                <div key={row} className="grid grid-cols-8 items-center gap-2">
+                  <div className="text-center text-sm font-semibold">{row}</div>
 
                   {['A', 'B', 'C'].map((col) => {
                     const seat = rowSeats.find((s) => parseSeat(s.seat_number).column === col)
@@ -157,7 +167,6 @@ function SeatSection({ title, seats, bookedSeatId }: { title: string; seats: Sea
 }
 
 export default function SeatGrid({ flightId, bookedSeatId = null }: SeatGridProps) {
-  const [supabase] = useState(() => createClient())
   const selectedSeat = useFlightStore((s) => s.selectedSeat)
   const setSelectedSeat = useFlightStore((s) => s.setSelectedSeat)
 
@@ -166,10 +175,11 @@ export default function SeatGrid({ flightId, bookedSeatId = null }: SeatGridProp
   const [fetchError, setFetchError] = useState<string | null>(null)
 
   useEffect(() => {
+    const supabase = createClient()
+
     async function fetchSeats() {
       setLoading(true)
       setFetchError(null)
-
       try {
         const { data, error } = await supabase
           .from('seats')
@@ -181,11 +191,11 @@ export default function SeatGrid({ flightId, bookedSeatId = null }: SeatGridProp
           console.error('SeatGrid fetch error', error)
           setFetchError('Unable to load seats. Please refresh the page.')
           setSeats([])
-        } else if (data) {
-          setSeats(data as SeatItem[])
+        } else {
+          setSeats((data as SeatItem[]) ?? [])
         }
-      } catch (error) {
-        console.error('SeatGrid unexpected error', error)
+      } catch (err) {
+        console.error('SeatGrid unexpected error', err)
         setFetchError('Unable to load seats. Please refresh the page.')
         setSeats([])
       } finally {
@@ -202,11 +212,9 @@ export default function SeatGrid({ flightId, bookedSeatId = null }: SeatGridProp
         { event: 'UPDATE', schema: 'public', table: 'seats', filter: `flight_id=eq.${flightId}` },
         (payload: RealtimePostgresChangesPayload<SeatItem>) => {
           const updatedSeat = payload.new as SeatItem
-
-          setSeats((prev) => prev.map((seat) => (seat.id === updatedSeat.id ? updatedSeat : seat)))
-
-          const currentSelectedSeat = useFlightStore.getState().selectedSeat
-          if (currentSelectedSeat?.id === updatedSeat.id && updatedSeat.is_available === false) {
+          setSeats((prev) => prev.map((s) => (s.id === updatedSeat.id ? updatedSeat : s)))
+          const cur = useFlightStore.getState().selectedSeat
+          if (cur?.id === updatedSeat.id && !updatedSeat.is_available) {
             setSelectedSeat(null)
           }
         }
@@ -216,8 +224,9 @@ export default function SeatGrid({ flightId, bookedSeatId = null }: SeatGridProp
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [flightId, setSelectedSeat, supabase])
+  }, [flightId, setSelectedSeat]) // ✅ supabase not in deps
 
+  // ✅ These lines are now correctly INSIDE the SeatGrid function
   const firstClassSeats = seats.filter((seat) => seat.class === 'first')
   const businessClassSeats = seats.filter((seat) => seat.class === 'business')
   const economySeats = seats.filter((seat) => seat.class === 'economy')
@@ -233,8 +242,12 @@ export default function SeatGrid({ flightId, bookedSeatId = null }: SeatGridProp
     )
   }
 
-  if (!loading && seats.length === 0) {
-    return <div className="rounded-xl border bg-white p-6 text-sm text-gray-500">No seats are available for this flight.</div>
+  if (seats.length === 0) {
+    return (
+      <div className="rounded-xl border bg-white p-6 text-sm text-gray-500">
+        No seats are available for this flight.
+      </div>
+    )
   }
 
   return (
@@ -249,7 +262,9 @@ export default function SeatGrid({ flightId, bookedSeatId = null }: SeatGridProp
       <div className="rounded-xl border bg-slate-50 p-4">
         <p className="text-sm font-medium text-slate-700">Temporary selection</p>
         {selectedSeat ? (
-          <p className="mt-1 text-sm text-slate-600">Seat {selectedSeat.seat_number} selected • {selectedSeat.class} • Extra fee ₹{selectedSeat.extra_fee}</p>
+          <p className="mt-1 text-sm text-slate-600">
+            Seat {selectedSeat.seat_number} selected • {selectedSeat.class} • Extra fee ₹{selectedSeat.extra_fee}
+          </p>
         ) : (
           <p className="mt-1 text-sm text-slate-500">No seat selected yet.</p>
         )}
@@ -260,4 +275,4 @@ export default function SeatGrid({ flightId, bookedSeatId = null }: SeatGridProp
       <SeatSection title="Economy Class" seats={economySeats} bookedSeatId={bookedSeatId} />
     </div>
   )
-}
+} // ✅ This is the real closing brace of SeatGrid

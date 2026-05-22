@@ -14,7 +14,7 @@ export default function LoginPage() {
 
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) { setError(error.message); return }
-    router.push('/dashboard')
+    router.push('/bookings')
     router.refresh() // ← IMPORTANT: forces Server Components to re-read session
   }
 

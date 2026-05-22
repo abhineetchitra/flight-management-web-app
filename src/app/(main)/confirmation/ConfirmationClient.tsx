@@ -19,6 +19,7 @@ interface BookingResult {
   booked_at: string
 }
 
+
 type PageState = 'idle' | 'loading' | 'success' | 'error'
 
 export default function ConfirmationClient({ flightId }: ConfirmationClientProps) {
@@ -105,8 +106,11 @@ export default function ConfirmationClient({ flightId }: ConfirmationClientProps
     }, 0)
   }, [flightId, handleBooking])
 
-  // --- Hydration spinner ---
-if (!_hasHydrated) {
+  const selectedSeat = useFlightStore((s) => s.selectedSeat)
+  const passengerData = useFlightStore((s) => s.passengerData)
+
+  // --- Hydration & Guard ---
+  if (!_hasHydrated) {
     return (
       <main className="flex min-h-screen items-center justify-center">
         <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-black" />
@@ -114,21 +118,24 @@ if (!_hasHydrated) {
     )
   }
 
-  // --- Guard ---
-  const storeState = useFlightStore.getState()
-  if (!flightId || !storeState.selectedSeat || !storeState.passengerData) {
-    return (
-      <main className="min-h-screen px-4 py-8">
-        <div className="space-y-2">
-          <p className="text-red-600">Incomplete booking information.</p>
-          <Link href="/" className="text-blue-600 underline">Start again</Link>
-        </div>
-      </main>
-    )
+  // Only show the guard if we haven't succeeded and aren't currently loading/idle
+  if (pageState !== 'success' && pageState !== 'loading' && pageState !== 'idle') {
+    if (!flightId || !selectedSeat || !passengerData) {
+      return (
+        <main className="min-h-screen px-4 py-8">
+          <div className="space-y-2 text-center">
+            <p className="text-red-600 font-medium">Incomplete booking information.</p>
+            <p className="text-sm text-gray-500">We couldnt find your selected seat or passenger details.</p>
+            <div className="pt-4">
+              <Link href="/" className="rounded-md bg-black px-4 py-2 text-sm text-white hover:bg-gray-900">
+                Start Search Again
+              </Link>
+            </div>
+          </div>
+        </main>
+      )
+    }
   }
-
-  const selectedSeat = storeState.selectedSeat
-  const passengerData = storeState.passengerData
 
   // --- Loading ---
   if (pageState === 'loading' || pageState === 'idle') {
@@ -172,6 +179,22 @@ if (!_hasHydrated) {
   }
 
   // --- Success ---
+  if (!selectedSeat || !passengerData) {
+    return (
+      <main className="min-h-screen px-4 py-8">
+        <div className="space-y-2 text-center">
+          <p className="text-red-600 font-medium">Incomplete booking details.</p>
+          <p className="text-sm text-gray-500">Your booking was confirmed, but we could not load the selected seat or passenger details.</p>
+          <div className="pt-4">
+            <Link href="/" className="rounded-md bg-black px-4 py-2 text-sm text-white hover:bg-gray-900">
+              Return home
+            </Link>
+          </div>
+        </div>
+      </main>
+    )
+  }
+
   return (
     <main className="min-h-screen px-4 py-8">
       <div className="mx-auto max-w-xl space-y-6">
