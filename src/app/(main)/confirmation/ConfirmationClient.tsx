@@ -89,14 +89,14 @@ export default function ConfirmationClient({ flightId }: ConfirmationClientProps
       setErrorMessage(
         err instanceof Error ? err.message : 'An unexpected error occurred.'
       )
-      useFlightStore.getState().setSelectedSeat(null)
+      
       hasBooked.current = false
     }
   }, [flightId, reset, supabase])
 
   useEffect(() => {
     const state = useFlightStore.getState()
-    if (!state._hasHydrated) return
+    if (!_hasHydrated) return
     if (hasBooked.current) return
     if (!flightId || !state.selectedSeat || !state.passengerData) return
 
@@ -104,12 +104,12 @@ export default function ConfirmationClient({ flightId }: ConfirmationClientProps
     setTimeout(() => {
       void handleBooking()
     }, 0)
-  }, [flightId, handleBooking])
+  }, [_hasHydrated, flightId, handleBooking])
 
   const selectedSeat = useFlightStore((s) => s.selectedSeat)
   const passengerData = useFlightStore((s) => s.passengerData)
 
-  // --- Hydration & Guard ---
+// --- Hydration Guard ---
   if (!_hasHydrated) {
     return (
       <main className="flex min-h-screen items-center justify-center">
@@ -118,32 +118,19 @@ export default function ConfirmationClient({ flightId }: ConfirmationClientProps
     )
   }
 
-  // Only show the guard if we haven't succeeded and aren't currently loading/idle
-  if (pageState !== 'success' && pageState !== 'loading' && pageState !== 'idle') {
-    if (!flightId || !selectedSeat || !passengerData) {
-      return (
-        <main className="min-h-screen px-4 py-8">
-          <div className="space-y-2 text-center">
-            <p className="text-red-600 font-medium">Incomplete booking information.</p>
-            <p className="text-sm text-gray-500">We couldnt find your selected seat or passenger details.</p>
-            <div className="pt-4">
-              <Link href="/" className="rounded-md bg-black px-4 py-2 text-sm text-white hover:bg-gray-900">
-                Start Search Again
-              </Link>
-            </div>
-          </div>
-        </main>
-      )
-    }
-  }
-
-  // --- Loading ---
-  if (pageState === 'loading' || pageState === 'idle') {
+  // --- Missing Data Guard ---
+  // Catch missing data FIRST, unless the booking succeeded (success clears the store)
+  if (pageState !== 'success' && (!flightId || !selectedSeat || !passengerData)) {
     return (
-      <main className="flex min-h-screen items-center justify-center px-4">
-        <div className="space-y-3 text-center">
-          <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-black" />
-          <p className="text-sm text-gray-600">Reserving your seat...</p>
+      <main className="min-h-screen px-4 py-8">
+        <div className="space-y-2 text-center">
+          <p className="text-red-600 font-medium">Incomplete booking information.</p>
+          <p className="text-sm text-gray-500">We couldnt find your selected seat or passenger details.</p>
+          <div className="pt-4">
+            <Link href="/" className="rounded-md bg-black px-4 py-2 text-sm text-white hover:bg-gray-900">
+              Start Search Again
+            </Link>
+          </div>
         </div>
       </main>
     )
@@ -178,6 +165,17 @@ export default function ConfirmationClient({ flightId }: ConfirmationClientProps
     )
   }
 
+  // --- Loading ---
+  if (pageState === 'loading' || pageState === 'idle') {
+    return (
+      <main className="flex min-h-screen items-center justify-center px-4">
+        <div className="space-y-3 text-center">
+          <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-black" />
+          <p className="text-sm text-gray-600">Reserving your seat...</p>
+        </div>
+      </main>
+    )
+  }
   // --- Success ---
   if (!selectedSeat || !passengerData) {
     return (
