@@ -24,53 +24,34 @@ type PageState = 'idle' | 'loading' | 'success' | 'error'
 export default function ConfirmationClient({ flightId }: ConfirmationClientProps) {
   const [supabase] = useState(() => createClient())
 
-  // Read directly from store instance — bypasses rehydration race condition
-  // getState() always returns the current in-memory state synchronously
+  // These hook values update once the store rehydrates from localStorage
   const selectedSeat   = useFlightStore((s) => s.selectedSeat)
   const passengerData  = useFlightStore((s) => s.passengerData)
   const selectedFlight = useFlightStore((s) => s.selectedFlight)
   const reset          = useFlightStore((s) => s.reset)
+  const hasHydrated    = useFlightStore((s) => s._hasHydrated)
 
   const [pageState, setPageState]       = useState<PageState>('idle')
   const [booking, setBooking]           = useState<BookingResult | null>(null)
   const [errorMessage, setErrorMessage] = useState<string>('')
-  const [ready, setReady]               = useState(false)
+
+  // mounted ensures we NEVER render the guard during SSR or before client JS runs
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
 
   const hasBooked = useRef(false)
 
-  // On mount: grab the latest state directly from the store (in-memory, no localStorage wait)
-  // then mark ready so the guard + booking can proceed
+  // Only attempt booking once mounted AND hydrated AND data present
   useEffect(() => {
-    // Force a re-read from the live store state after mount
-    const state = useFlightStore.getState()
-    if (state.selectedSeat && state.passengerData && flightId) {
-      setReady(true)
-    } else {
-      // Not available in memory — wait for persist rehydration
-      const unsub = useFlightStore.subscribe((s) => {
-        if (s._hasHydrated) {
-          setReady(true)
-          unsub()
-        }
-      })
-      // Also check immediately in case already hydrated
-      if (useFlightStore.getState()._hasHydrated) {
-        setReady(true)
-        unsub()
-      }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  useEffect(() => {
-    if (!ready) return
+    if (!mounted) return
+    if (!hasHydrated) return
     if (hasBooked.current) return
-    const { selectedSeat: seat, passengerData: passenger } = useFlightStore.getState()
-    if (!flightId || !seat || !passenger) return
+    const state = useFlightStore.getState()
+    if (!flightId || !state.selectedSeat || !state.passengerData) return
     hasBooked.current = true
     handleBooking()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready])
+  }, [mounted, hasHydrated])
 
   async function handleBooking() {
     const { selectedSeat: seat, passengerData: passenger } = useFlightStore.getState()
@@ -80,20 +61,14 @@ export default function ConfirmationClient({ flightId }: ConfirmationClientProps
     setErrorMessage('')
 
     try {
-      // Step 1 — RPC: lock seat, generate PNR, create booking (pending)
       const { data: bookingData, error: rpcError } = await supabase.rpc(
         'reserve_seat',
-        {
-          p_flight_id: flightId,
-          p_seat_id: seat.id,
-        }
+        { p_flight_id: flightId, p_seat_id: seat.id }
       )
-
       if (rpcError) throw new Error(getFriendlyError(rpcError.message))
 
       const newBooking = bookingData as BookingResult
 
-      // Step 2 — Insert passenger record
       const { error: passengerError } = await supabase
         .from('passengers')
         .insert({
@@ -103,16 +78,13 @@ export default function ConfirmationClient({ flightId }: ConfirmationClientProps
           nationality: passenger.nationality,
           dob:         passenger.dob,
         })
-
       if (passengerError)
         throw new Error('Failed to save passenger details. Please contact support.')
 
-      // Step 3 — Confirm booking: pending → confirmed
       const { error: updateError } = await supabase
         .from('bookings')
         .update({ status: 'confirmed' })
         .eq('id', newBooking.id)
-
       if (updateError)
         throw new Error('Failed to confirm booking. Please contact support.')
 
@@ -130,8 +102,9 @@ export default function ConfirmationClient({ flightId }: ConfirmationClientProps
     }
   }
 
-  // --- Spinner until store is ready ---
-  if (!ready) {
+  // --- Show spinner until client JS has mounted AND store has rehydrated ---
+  // This prevents the guard from ever firing during SSR or before localStorage is read
+  if (!mounted || !hasHydrated) {
     return (
       <main className="flex min-h-screen items-center justify-center">
         <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-black" />
@@ -139,7 +112,7 @@ export default function ConfirmationClient({ flightId }: ConfirmationClientProps
     )
   }
 
-  // --- Guard ---
+  // --- Guard (only runs after full client hydration) ---
   if (!flightId || !selectedSeat || !passengerData) {
     return (
       <main className="min-h-screen px-4 py-8">
@@ -151,7 +124,7 @@ export default function ConfirmationClient({ flightId }: ConfirmationClientProps
     )
   }
 
-  // --- Loading ---
+  // --- Loading / Processing ---
   if (pageState === 'loading' || pageState === 'idle') {
     return (
       <main className="flex min-h-screen items-center justify-center px-4">
@@ -172,10 +145,7 @@ export default function ConfirmationClient({ flightId }: ConfirmationClientProps
           <p className="text-sm text-red-600">{errorMessage}</p>
           <div className="flex gap-3">
             <button
-              onClick={() => {
-                setPageState('idle')
-                handleBooking()
-              }}
+              onClick={() => { setPageState('idle'); handleBooking() }}
               className="rounded-md bg-black px-4 py-2 text-sm text-white hover:bg-gray-900"
             >
               Try Again
@@ -197,37 +167,23 @@ export default function ConfirmationClient({ flightId }: ConfirmationClientProps
     <main className="min-h-screen px-4 py-8">
       <div className="mx-auto max-w-xl space-y-6">
 
-        {/* Success Banner */}
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-6 text-center">
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-2xl">
             ✓
           </div>
           <h1 className="text-xl font-semibold text-emerald-800">Booking Confirmed!</h1>
-          <p className="mt-1 text-sm text-emerald-600">
-            Your seat has been reserved successfully.
-          </p>
+          <p className="mt-1 text-sm text-emerald-600">Your seat has been reserved successfully.</p>
         </div>
 
-        {/* PNR */}
         <div className="rounded-xl border bg-white p-6 text-center shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-widest text-gray-500">
-            PNR Code
-          </p>
-          <p className="mt-2 font-mono text-4xl font-bold tracking-widest text-black">
-            {booking?.pnr_code}
-          </p>
-          <p className="mt-1 text-xs text-gray-400">
-            Save this code to manage your booking
-          </p>
+          <p className="text-xs font-medium uppercase tracking-widest text-gray-500">PNR Code</p>
+          <p className="mt-2 font-mono text-4xl font-bold tracking-widest text-black">{booking?.pnr_code}</p>
+          <p className="mt-1 text-xs text-gray-400">Save this code to manage your booking</p>
         </div>
 
-        {/* Full Details */}
         <div className="rounded-xl border bg-white p-5 shadow-sm">
           <h2 className="mb-3 text-sm font-semibold text-gray-700">Booking Details</h2>
-
           <div className="divide-y text-sm">
-
-            {/* Flight */}
             {selectedFlight && (
               <>
                 <div className="flex justify-between py-2">
@@ -236,41 +192,28 @@ export default function ConfirmationClient({ flightId }: ConfirmationClientProps
                 </div>
                 <div className="flex justify-between py-2">
                   <span className="text-gray-500">Route</span>
-                  <span className="font-medium">
-                    {selectedFlight.origin} → {selectedFlight.destination}
-                  </span>
+                  <span className="font-medium">{selectedFlight.origin} → {selectedFlight.destination}</span>
                 </div>
                 <div className="flex justify-between py-2">
                   <span className="text-gray-500">Departure</span>
                   <span className="font-medium">
-                    {new Date(selectedFlight.departs_at).toLocaleString('en-IN', {
-                      dateStyle: 'medium',
-                      timeStyle: 'short',
-                    })}
+                    {new Date(selectedFlight.departs_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
                   </span>
                 </div>
                 <div className="flex justify-between py-2">
                   <span className="text-gray-500">Arrival</span>
                   <span className="font-medium">
-                    {new Date(selectedFlight.arrives_at).toLocaleString('en-IN', {
-                      dateStyle: 'medium',
-                      timeStyle: 'short',
-                    })}
+                    {new Date(selectedFlight.arrives_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
                   </span>
                 </div>
               </>
             )}
-
-            {/* Seat */}
             <div className="flex justify-between py-2">
               <span className="text-gray-500">Seat</span>
               <span className="font-medium">
-                {selectedSeat.seat_number}{' '}
-                <span className="capitalize text-gray-400">({selectedSeat.class})</span>
+                {selectedSeat.seat_number} <span className="capitalize text-gray-400">({selectedSeat.class})</span>
               </span>
             </div>
-
-            {/* Passenger */}
             <div className="flex justify-between py-2">
               <span className="text-gray-500">Passenger</span>
               <span className="font-medium">{passengerData.full_name}</span>
@@ -282,39 +225,25 @@ export default function ConfirmationClient({ flightId }: ConfirmationClientProps
             <div className="flex justify-between py-2">
               <span className="text-gray-500">Date of Birth</span>
               <span className="font-medium">
-                {new Date(passengerData.dob).toLocaleDateString('en-IN', {
-                  dateStyle: 'medium',
-                })}
+                {new Date(passengerData.dob).toLocaleDateString('en-IN', { dateStyle: 'medium' })}
               </span>
             </div>
-
-            {/* Status + Price */}
             <div className="flex justify-between py-2">
               <span className="text-gray-500">Status</span>
-              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                Confirmed
-              </span>
+              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">Confirmed</span>
             </div>
             <div className="flex justify-between py-2">
               <span className="text-gray-500">Total Paid</span>
               <span className="font-semibold text-black">₹{booking?.total_price}</span>
             </div>
-
           </div>
         </div>
 
-        {/* Actions */}
         <div className="flex gap-3">
-          <Link
-            href="/bookings"
-            className="flex-1 rounded-md bg-black px-4 py-2 text-center text-sm text-white hover:bg-gray-900"
-          >
+          <Link href="/bookings" className="flex-1 rounded-md bg-black px-4 py-2 text-center text-sm text-white hover:bg-gray-900">
             My Bookings
           </Link>
-          <Link
-            href="/"
-            className="flex-1 rounded-md border border-gray-300 px-4 py-2 text-center text-sm text-gray-700 hover:bg-gray-50"
-          >
+          <Link href="/" className="flex-1 rounded-md border border-gray-300 px-4 py-2 text-center text-sm text-gray-700 hover:bg-gray-50">
             Search More Flights
           </Link>
         </div>
