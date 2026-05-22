@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useFlightStore } from '@/store/useFlightStore'
+import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 
 type SeatClass = 'first' | 'business' | 'economy'
 type SeatState = 'available' | 'occupied' | 'selected' | 'your-seat'
@@ -23,22 +24,11 @@ interface SeatGridProps {
 
 function parseSeat(seatNumber: string) {
   const match = seatNumber.match(/^(\d+)([A-Z])$/)
-
-  if (!match) {
-    return { row: 0, column: '' }
-  }
-
-  return {
-    row: Number(match[1]),
-    column: match[2],
-  }
+  if (!match) return { row: 0, column: '' }
+  return { row: Number(match[1]), column: match[2] }
 }
 
-function getSeatState(
-  seat: SeatItem,
-  selectedSeatId: string | null,
-  bookedSeatId: string | null
-): SeatState {
+function getSeatState(seat: SeatItem, selectedSeatId: string | null, bookedSeatId: string | null): SeatState {
   if (bookedSeatId === seat.id) return 'your-seat'
   if (!seat.is_available) return 'occupied'
   if (selectedSeatId === seat.id) return 'selected'
@@ -58,21 +48,11 @@ function getSeatClasses(state: SeatState) {
   }
 }
 
-function SeatSection({
-  title,
-  seats,
-  bookedSeatId,
-}: {
-  title: string
-  seats: SeatItem[]
-  bookedSeatId?: string | null
-}) {
+function SeatSection({ title, seats, bookedSeatId }: { title: string; seats: SeatItem[]; bookedSeatId?: string | null }) {
   const selectedSeat = useFlightStore((s) => s.selectedSeat)
   const setSelectedSeat = useFlightStore((s) => s.setSelectedSeat)
 
-  const parsedRows = [...new Set(seats.map((seat) => parseSeat(seat.seat_number).row))].sort(
-    (a, b) => a - b
-  )
+  const parsedRows = [...new Set(seats.map((seat) => parseSeat(seat.seat_number).row))].sort((a, b) => a - b)
 
   function handleSeatClick(seat: SeatItem) {
     if (!seat.is_available) return
@@ -101,124 +81,116 @@ function SeatSection({
       </div>
 
       <div className="overflow-x-auto rounded-xl border p-4">
-        <div className="min-w-[720px] space-y-3">
-          <div className="grid grid-cols-[60px_repeat(3,1fr)_40px_repeat(3,1fr)] gap-2 text-center text-xs font-medium text-gray-500">
-            <div>Row</div>
-            <div>A</div>
-            <div>B</div>
-            <div>C</div>
-            <div></div>
-            <div>D</div>
-            <div>E</div>
-            <div>F</div>
+        {seats.length === 0 ? (
+          <div className="rounded-xl bg-slate-50 p-6 text-sm text-gray-500">No seats available in this cabin.</div>
+        ) : (
+          <div className="min-w-180 space-y-3">
+            <div className="grid grid-cols-8 gap-2 text-center text-xs font-medium text-gray-500">
+              <div>Row</div>
+              <div>A</div>
+              <div>B</div>
+              <div>C</div>
+              <div></div>
+              <div>D</div>
+              <div>E</div>
+              <div>F</div>
+            </div>
+
+            {parsedRows.map((row) => {
+              const rowSeats = seats.filter((seat) => parseSeat(seat.seat_number).row === row)
+
+              return (
+                <div key={row} className="grid grid-cols-8 gap-2 items-center">
+                  <div className="text-sm font-semibold text-center">{row}</div>
+
+                  {['A', 'B', 'C'].map((col) => {
+                    const seat = rowSeats.find((s) => parseSeat(s.seat_number).column === col)
+                    if (!seat) return <div key={col} />
+
+                    const seatState = getSeatState(seat, selectedSeat?.id ?? null, bookedSeatId ?? null)
+                    const isDisabled = !seat.is_available || bookedSeatId === seat.id
+
+                    return (
+                      <button
+                        key={col}
+                        type="button"
+                        disabled={isDisabled}
+                        title={`${seat.class} • Extra fee ₹${seat.extra_fee}`}
+                        onClick={() => handleSeatClick(seat)}
+                        className={`rounded-md border px-2 py-3 text-center text-xs font-medium transition ${getSeatClasses(seatState)}`}
+                      >
+                        {seat.seat_number}
+                      </button>
+                    )
+                  })}
+
+                  <div className="text-center text-xs text-gray-400">✈</div>
+
+                  {['D', 'E', 'F'].map((col) => {
+                    const seat = rowSeats.find((s) => parseSeat(s.seat_number).column === col)
+                    if (!seat) return <div key={col} />
+
+                    const seatState = getSeatState(seat, selectedSeat?.id ?? null, bookedSeatId ?? null)
+                    const isDisabled = !seat.is_available || bookedSeatId === seat.id
+
+                    return (
+                      <button
+                        key={col}
+                        type="button"
+                        disabled={isDisabled}
+                        title={`${seat.class} • Extra fee ₹${seat.extra_fee}`}
+                        onClick={() => handleSeatClick(seat)}
+                        className={`rounded-md border px-2 py-3 text-center text-xs font-medium transition ${getSeatClasses(seatState)}`}
+                      >
+                        {seat.seat_number}
+                      </button>
+                    )
+                  })}
+                </div>
+              )
+            })}
           </div>
-
-          {parsedRows.map((row) => {
-            const rowSeats = seats.filter(
-              (seat) => parseSeat(seat.seat_number).row === row
-            )
-
-            return (
-              <div
-                key={row}
-                className="grid grid-cols-[60px_repeat(3,1fr)_40px_repeat(3,1fr)] gap-2 items-center"
-              >
-                <div className="text-sm font-semibold text-center">{row}</div>
-
-                {['A', 'B', 'C'].map((col) => {
-                  const seat = rowSeats.find(
-                    (s) => parseSeat(s.seat_number).column === col
-                  )
-
-                  if (!seat) return <div key={col} />
-
-                  const seatState = getSeatState(
-                    seat,
-                    selectedSeat?.id ?? null,
-                    bookedSeatId ?? null
-                  )
-
-                  const isDisabled = !seat.is_available || bookedSeatId === seat.id
-
-                  return (
-                    <button
-                      key={col}
-                      type="button"
-                      disabled={isDisabled}
-                      title={`${seat.class} • Extra fee ₹${seat.extra_fee}`}
-                      onClick={() => handleSeatClick(seat)}
-                      className={`rounded-md border px-2 py-3 text-center text-xs font-medium transition ${getSeatClasses(seatState)}`}
-                    >
-                      {seat.seat_number}
-                    </button>
-                  )
-                })}
-
-                <div className="text-center text-xs text-gray-400">✈</div>
-
-                {['D', 'E', 'F'].map((col) => {
-                  const seat = rowSeats.find(
-                    (s) => parseSeat(s.seat_number).column === col
-                  )
-
-                  if (!seat) return <div key={col} />
-
-                  const seatState = getSeatState(
-                    seat,
-                    selectedSeat?.id ?? null,
-                    bookedSeatId ?? null
-                  )
-
-                  const isDisabled = !seat.is_available || bookedSeatId === seat.id
-
-                  return (
-                    <button
-                      key={col}
-                      type="button"
-                      disabled={isDisabled}
-                      title={`${seat.class} • Extra fee ₹${seat.extra_fee}`}
-                      onClick={() => handleSeatClick(seat)}
-                      className={`rounded-md border px-2 py-3 text-center text-xs font-medium transition ${getSeatClasses(seatState)}`}
-                    >
-                      {seat.seat_number}
-                    </button>
-                  )
-                })}
-              </div>
-            )
-          })}
-        </div>
+        )}
       </div>
     </section>
   )
 }
 
-export default function SeatGrid({
-  flightId,
-  bookedSeatId = null,
-}: SeatGridProps) {
+export default function SeatGrid({ flightId, bookedSeatId = null }: SeatGridProps) {
   const [supabase] = useState(() => createClient())
   const selectedSeat = useFlightStore((s) => s.selectedSeat)
   const setSelectedSeat = useFlightStore((s) => s.setSelectedSeat)
 
   const [seats, setSeats] = useState<SeatItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [fetchError, setFetchError] = useState<string | null>(null)
 
   useEffect(() => {
     async function fetchSeats() {
       setLoading(true)
+      setFetchError(null)
 
-      const { data, error } = await supabase
-        .from('seats')
-        .select('id, flight_id, seat_number, class, is_available, extra_fee')
-        .eq('flight_id', flightId)
-        .order('seat_number', { ascending: true })
+      try {
+        const { data, error } = await supabase
+          .from('seats')
+          .select('id, flight_id, seat_number, class, is_available, extra_fee')
+          .eq('flight_id', flightId)
+          .order('seat_number', { ascending: true })
 
-      if (!error && data) {
-        setSeats(data as SeatItem[])
+        if (error) {
+          console.error('SeatGrid fetch error', error)
+          setFetchError('Unable to load seats. Please refresh the page.')
+          setSeats([])
+        } else if (data) {
+          setSeats(data as SeatItem[])
+        }
+      } catch (error) {
+        console.error('SeatGrid unexpected error', error)
+        setFetchError('Unable to load seats. Please refresh the page.')
+        setSeats([])
+      } finally {
+        setLoading(false)
       }
-
-      setLoading(false)
     }
 
     fetchSeats()
@@ -227,27 +199,14 @@ export default function SeatGrid({
       .channel(`seats-flight-${flightId}`)
       .on(
         'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'seats',
-          filter: `flight_id=eq.${flightId}`,
-        },
-        (payload) => {
+        { event: 'UPDATE', schema: 'public', table: 'seats', filter: `flight_id=eq.${flightId}` },
+        (payload: RealtimePostgresChangesPayload<SeatItem>) => {
           const updatedSeat = payload.new as SeatItem
 
-          setSeats((prevSeats) =>
-            prevSeats.map((seat) =>
-              seat.id === updatedSeat.id ? updatedSeat : seat
-            )
-          )
+          setSeats((prev) => prev.map((seat) => (seat.id === updatedSeat.id ? updatedSeat : seat)))
 
           const currentSelectedSeat = useFlightStore.getState().selectedSeat
-
-          if (
-            currentSelectedSeat?.id === updatedSeat.id &&
-            updatedSeat.is_available === false
-          ) {
+          if (currentSelectedSeat?.id === updatedSeat.id && updatedSeat.is_available === false) {
             setSelectedSeat(null)
           }
         }
@@ -263,54 +222,42 @@ export default function SeatGrid({
   const businessClassSeats = seats.filter((seat) => seat.class === 'business')
   const economySeats = seats.filter((seat) => seat.class === 'economy')
 
-  if (loading) {
-    return <p className="text-sm text-gray-500">Loading seats...</p>
+  if (loading) return <p className="text-sm text-gray-500">Loading seats...</p>
+
+  if (fetchError) {
+    return (
+      <div className="rounded-xl border bg-red-50 p-6 text-sm text-red-700">
+        <p className="font-semibold">Unable to load seats</p>
+        <p className="mt-2">{fetchError}</p>
+      </div>
+    )
+  }
+
+  if (!loading && seats.length === 0) {
+    return <div className="rounded-xl border bg-white p-6 text-sm text-gray-500">No seats are available for this flight.</div>
   }
 
   return (
     <div className="space-y-8">
       <div className="flex flex-wrap gap-3 text-sm">
-        <span className="rounded-full border border-gray-300 bg-white px-3 py-1 text-gray-700">
-          Available
-        </span>
-        <span className="rounded-full border border-gray-300 bg-gray-200 px-3 py-1 text-gray-500">
-          Occupied
-        </span>
-        <span className="rounded-full border border-blue-600 bg-blue-600 px-3 py-1 text-white">
-          Selected
-        </span>
-        <span className="rounded-full border border-emerald-600 bg-emerald-600 px-3 py-1 text-white">
-          Your Seat
-        </span>
+        <span className="rounded-full border border-gray-300 bg-white px-3 py-1 text-gray-700">Available</span>
+        <span className="rounded-full border border-gray-300 bg-gray-200 px-3 py-1 text-gray-500">Occupied</span>
+        <span className="rounded-full border border-blue-600 bg-blue-600 px-3 py-1 text-white">Selected</span>
+        <span className="rounded-full border border-emerald-600 bg-emerald-600 px-3 py-1 text-white">Your Seat</span>
       </div>
 
       <div className="rounded-xl border bg-slate-50 p-4">
         <p className="text-sm font-medium text-slate-700">Temporary selection</p>
         {selectedSeat ? (
-          <p className="mt-1 text-sm text-slate-600">
-            Seat {selectedSeat.seat_number} selected • {selectedSeat.class} • Extra fee ₹
-            {selectedSeat.extra_fee}
-          </p>
+          <p className="mt-1 text-sm text-slate-600">Seat {selectedSeat.seat_number} selected • {selectedSeat.class} • Extra fee ₹{selectedSeat.extra_fee}</p>
         ) : (
           <p className="mt-1 text-sm text-slate-500">No seat selected yet.</p>
         )}
       </div>
 
-      <SeatSection
-        title="First Class"
-        seats={firstClassSeats}
-        bookedSeatId={bookedSeatId}
-      />
-      <SeatSection
-        title="Business Class"
-        seats={businessClassSeats}
-        bookedSeatId={bookedSeatId}
-      />
-      <SeatSection
-        title="Economy Class"
-        seats={economySeats}
-        bookedSeatId={bookedSeatId}
-      />
+      <SeatSection title="First Class" seats={firstClassSeats} bookedSeatId={bookedSeatId} />
+      <SeatSection title="Business Class" seats={businessClassSeats} bookedSeatId={bookedSeatId} />
+      <SeatSection title="Economy Class" seats={economySeats} bookedSeatId={bookedSeatId} />
     </div>
   )
 }

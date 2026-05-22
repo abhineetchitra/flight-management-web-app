@@ -101,12 +101,13 @@ export const useFlightStore = create<FlightStore>()(
         selectedSeat: state.selectedSeat,
         bookingStep: state.bookingStep,
         passengerData: state.passengerData
-          ? {
-              full_name: state.passengerData.full_name,
-              nationality: state.passengerData.nationality,
-              dob: state.passengerData.dob,
-            }
-          : null,
+  ? {
+      full_name: state.passengerData.full_name,
+      passport_no: state.passengerData.passport_no,
+      nationality: state.passengerData.nationality,
+      dob: state.passengerData.dob,
+    }
+  : null,
       }),
     }
   )

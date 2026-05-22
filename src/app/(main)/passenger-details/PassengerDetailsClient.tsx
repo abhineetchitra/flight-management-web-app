@@ -2,11 +2,13 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { useFlightStore } from '@/store/useFlightStore'
 
 interface PassengerDetailsClientProps {
   flightId: string | null
+  seatId: string | null
 }
 
 interface FormFields {
@@ -71,11 +73,59 @@ function validate(fields: FormFields): FormErrors {
 
 export default function PassengerDetailsClient({
   flightId,
+  seatId,
 }: PassengerDetailsClientProps) {
   const router = useRouter()
   const setPassengerData = useFlightStore((s) => s.setPassengerData)
   const setBookingStep = useFlightStore((s) => s.setBookingStep)
   const selectedSeat = useFlightStore((s) => s.selectedSeat)
+  const setSelectedSeat = useFlightStore((s) => s.setSelectedSeat)
+
+  const [seatLoading, setSeatLoading] = useState(!selectedSeat && Boolean(seatId))
+  const [seatError, setSeatError] = useState<string | null>(null)
+  const [supabase] = useState(() => createClient())
+
+  useEffect(() => {
+    if (!seatId || selectedSeat) {
+      if (seatLoading) {
+        Promise.resolve().then(() => setSeatLoading(false))
+      }
+      return
+    }
+
+    let canceled = false
+
+    async function loadSeat() {
+      setSeatLoading(true)
+      const { data, error } = await supabase
+        .from('seats')
+        .select('id, flight_id, seat_number, class, is_available, extra_fee')
+        .eq('id', seatId)
+        .single()
+
+      if (canceled) return
+      if (error || !data) {
+        setSeatError('Unable to restore the selected seat. Please go back and choose a seat again.')
+        setSeatLoading(false)
+        return
+      }
+
+      if (data.flight_id !== flightId) {
+        setSeatError('Selected seat does not match the current flight.')
+        setSeatLoading(false)
+        return
+      }
+
+      setSelectedSeat(data)
+      setSeatLoading(false)
+    }
+
+    void loadSeat()
+
+    return () => {
+      canceled = true
+    }
+  }, [flightId, seatId, selectedSeat, setSelectedSeat, supabase, seatLoading])
 
   const [fields, setFields] = useState<FormFields>({
     fullName: '',
@@ -106,11 +156,21 @@ export default function PassengerDetailsClient({
     )
   }
 
+  if (seatLoading) {
+    return (
+      <main className="min-h-screen px-4 py-8">
+        <div className="space-y-2">
+          <p className="text-gray-700">Restoring your seat selection…</p>
+        </div>
+      </main>
+    )
+  }
+
   if (!selectedSeat) {
     return (
       <main className="min-h-screen px-4 py-8">
         <div className="space-y-2">
-          <p className="text-red-600">No seat selected.</p>
+          <p className="text-red-600">{seatError ?? 'No seat selected.'}</p>
           <Link
             href={`/booking?flightId=${flightId}`}
             className="text-blue-600 underline"
@@ -177,7 +237,7 @@ export default function PassengerDetailsClient({
     setSubmitting(true)
     setTimeout(() => {
       router.push(`/confirmation?flightId=${flightId}`)
-    }, 80)
+    }, 150)
   }
 
   return (

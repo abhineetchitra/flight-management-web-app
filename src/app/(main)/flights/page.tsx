@@ -30,19 +30,21 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
 
   const supabase = await createClient()
 
+  const startDate = new Date(`${date}T00:00:00`)
+  const endDate = new Date(startDate)
+  endDate.setDate(endDate.getDate() + 1)
+
   const { data: flights, error } = await supabase
     .from('flights')
     .select('*')
     .eq('origin', origin)
     .eq('destination', destination)
     .eq('status', 'scheduled')
+    .gte('departs_at', startDate.toISOString())
+    .lt('departs_at', endDate.toISOString())
     .order('departs_at', { ascending: true })
 
-  const filteredFlights =
-    flights?.filter((flight) => {
-      const flightDate = new Date(flight.departs_at).toISOString().split('T')[0]
-      return flightDate === date
-    }) ?? []
+  const filteredFlights = flights ?? []
 
   return (
     <main className="min-h-screen px-4 py-8">
