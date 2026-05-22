@@ -24,29 +24,58 @@ type PageState = 'idle' | 'loading' | 'success' | 'error'
 export default function ConfirmationClient({ flightId }: ConfirmationClientProps) {
   const [supabase] = useState(() => createClient())
 
+  // Read directly from store instance — bypasses rehydration race condition
+  // getState() always returns the current in-memory state synchronously
   const selectedSeat   = useFlightStore((s) => s.selectedSeat)
   const passengerData  = useFlightStore((s) => s.passengerData)
   const selectedFlight = useFlightStore((s) => s.selectedFlight)
   const reset          = useFlightStore((s) => s.reset)
-  const hydrated       = useFlightStore((s) => s._hasHydrated)
 
   const [pageState, setPageState]       = useState<PageState>('idle')
   const [booking, setBooking]           = useState<BookingResult | null>(null)
   const [errorMessage, setErrorMessage] = useState<string>('')
+  const [ready, setReady]               = useState(false)
 
   const hasBooked = useRef(false)
 
-  // Booking effect — runs only after Zustand has rehydrated from localStorage
+  // On mount: grab the latest state directly from the store (in-memory, no localStorage wait)
+  // then mark ready so the guard + booking can proceed
   useEffect(() => {
-    if (!hydrated) return
+    // Force a re-read from the live store state after mount
+    const state = useFlightStore.getState()
+    if (state.selectedSeat && state.passengerData && flightId) {
+      setReady(true)
+    } else {
+      // Not available in memory — wait for persist rehydration
+      const unsub = useFlightStore.subscribe((s) => {
+        if (s._hasHydrated) {
+          setReady(true)
+          unsub()
+        }
+      })
+      // Also check immediately in case already hydrated
+      if (useFlightStore.getState()._hasHydrated) {
+        setReady(true)
+        unsub()
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    if (!ready) return
     if (hasBooked.current) return
-    if (!flightId || !selectedSeat || !passengerData) return
+    const { selectedSeat: seat, passengerData: passenger } = useFlightStore.getState()
+    if (!flightId || !seat || !passenger) return
     hasBooked.current = true
     handleBooking()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrated])
+  }, [ready])
 
   async function handleBooking() {
+    const { selectedSeat: seat, passengerData: passenger } = useFlightStore.getState()
+    if (!seat || !passenger) return
+
     setPageState('loading')
     setErrorMessage('')
 
@@ -56,7 +85,7 @@ export default function ConfirmationClient({ flightId }: ConfirmationClientProps
         'reserve_seat',
         {
           p_flight_id: flightId,
-          p_seat_id: selectedSeat!.id,
+          p_seat_id: seat.id,
         }
       )
 
@@ -69,10 +98,10 @@ export default function ConfirmationClient({ flightId }: ConfirmationClientProps
         .from('passengers')
         .insert({
           booking_id:  newBooking.id,
-          full_name:   passengerData!.full_name,
-          passport_no: passengerData!.passport_no ?? '',
-          nationality: passengerData!.nationality,
-          dob:         passengerData!.dob,
+          full_name:   passenger.full_name,
+          passport_no: passenger.passport_no ?? '',
+          nationality: passenger.nationality,
+          dob:         passenger.dob,
         })
 
       if (passengerError)
@@ -101,8 +130,8 @@ export default function ConfirmationClient({ flightId }: ConfirmationClientProps
     }
   }
 
-  // --- Hydration spinner ---
-  if (!hydrated) {
+  // --- Spinner until store is ready ---
+  if (!ready) {
     return (
       <main className="flex min-h-screen items-center justify-center">
         <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-black" />
