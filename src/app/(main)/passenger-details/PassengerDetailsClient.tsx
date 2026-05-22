@@ -85,6 +85,7 @@ export default function PassengerDetailsClient({
   })
 
   const [errors, setErrors] = useState<FormErrors>({})
+  const [submitting, setSubmitting] = useState(false)
   const [touched, setTouched] = useState<Record<keyof FormFields, boolean>>({
     fullName: false,
     passportNo: false,
@@ -162,15 +163,21 @@ export default function PassengerDetailsClient({
     setErrors(validationErrors)
     if (Object.keys(validationErrors).length > 0) return
 
+    // Write to Zustand (which persists to localStorage via zustand/persist)
     setPassengerData({
       full_name: fields.fullName.trim(),
       passport_no: fields.passportNo.trim().toUpperCase(),
       nationality: fields.nationality,
       dob: fields.dob,
     })
-
     setBookingStep('confirmation')
-    router.push(`/confirmation?flightId=${flightId}`)
+
+    // Wait for Zustand persist middleware to flush to localStorage
+    // before navigating — prevents "Incomplete booking information" on confirmation page
+    setSubmitting(true)
+    setTimeout(() => {
+      router.push(`/confirmation?flightId=${flightId}`)
+    }, 80)
   }
 
   return (
@@ -326,9 +333,10 @@ export default function PassengerDetailsClient({
             </Link>
             <button
               type="submit"
-              className="rounded-md bg-black px-5 py-2 text-sm text-white hover:bg-gray-900"
+              disabled={submitting}
+              className="rounded-md bg-black px-5 py-2 text-sm text-white hover:bg-gray-900 disabled:opacity-60"
             >
-              Continue to Confirmation
+              {submitting ? 'Please wait...' : 'Continue to Confirmation'}
             </button>
           </div>
         </form>
