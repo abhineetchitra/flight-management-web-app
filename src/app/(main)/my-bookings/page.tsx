@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import CancelBookingButton from '@/components/CancelBookingButton'
+import RescheduleBookingButton from '@/components/RescheduleBookingButton'
 
 type BookingStatus = 'confirmed' | 'cancelled' | 'rescheduled'
 
@@ -17,6 +18,7 @@ interface SeatInfo {
 
 interface BookingItem {
   id: string
+  flight_id: string
   status: BookingStatus
   booking_reference: string | null
   passenger_name: string | null
@@ -58,6 +60,7 @@ export default async function MyBookingsPage() {
     .from('bookings')
     .select(`
       id,
+      flight_id,
       status,
       booking_reference,
       passenger_name,
@@ -87,6 +90,7 @@ export default async function MyBookingsPage() {
   const bookings: BookingItem[] = (data ?? []).map((item) => {
     const booking = item as {
       id: string
+      flight_id: string
       status: BookingStatus
       booking_reference: string | null
       passenger_name: string | null
@@ -96,6 +100,7 @@ export default async function MyBookingsPage() {
 
     return {
       id: booking.id,
+      flight_id: booking.flight_id,
       status: booking.status,
       booking_reference: booking.booking_reference,
       passenger_name: booking.passenger_name,
@@ -164,11 +169,19 @@ export default async function MyBookingsPage() {
                   <p>Booking Ref: {booking.booking_reference ?? '—'}</p>
                 </div>
 
-                {booking.status === 'confirmed' && (
-                  <div className="mt-4">
-                    <CancelBookingButton bookingId={booking.id} />
-                  </div>
-                )}
+                {booking.status === 'confirmed' &&
+                  booking.flights?.origin &&
+                  booking.flights?.destination && (
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <CancelBookingButton bookingId={booking.id} />
+                      <RescheduleBookingButton
+                        bookingId={booking.id}
+                        currentFlightId={booking.flight_id}
+                        origin={booking.flights.origin}
+                        destination={booking.flights.destination}
+                      />
+                    </div>
+                  )}
               </div>
             ))}
           </div>

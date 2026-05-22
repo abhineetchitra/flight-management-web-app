@@ -1,8 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 
 interface CancelBookingButtonProps {
   bookingId: string
@@ -53,8 +53,9 @@ export default function CancelBookingButton({
             <h2 className="text-lg font-semibold text-gray-900">
               Cancel this booking?
             </h2>
+
             <p className="mt-2 text-sm text-gray-600">
-              This will mark the booking as cancelled and release the selected seat.
+              This will mark the booking as cancelled and free the selected seat.
             </p>
 
             {error && (
