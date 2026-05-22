@@ -50,6 +50,10 @@ interface FlightStore {
   bookingStep: BookingStep
   passengerData: PassengerData | null
 
+  // ✅ ADD — hydration tracking
+  _hasHydrated: boolean
+  setHasHydrated: (val: boolean) => void
+
   setSearchQuery: (query: SearchQuery | null) => void
   setSelectedFlight: (flight: Flight | null) => void
   setSelectedSeat: (seat: Seat | null) => void
@@ -64,12 +68,16 @@ const initialState = {
   selectedSeat: null,
   bookingStep: 'search' as BookingStep,
   passengerData: null,
+  _hasHydrated: false,  // ✅ ADD
 }
 
 export const useFlightStore = create<FlightStore>()(
   persist(
     (set) => ({
       ...initialState,
+
+      // ✅ ADD
+      setHasHydrated: (val) => set({ _hasHydrated: val }),
 
       setSearchQuery: (query) => set({ searchQuery: query }),
       setSelectedFlight: (flight) => set({ selectedFlight: flight }),
@@ -81,6 +89,12 @@ export const useFlightStore = create<FlightStore>()(
     }),
     {
       name: 'flight-store',
+
+      // ✅ ADD — fires after localStorage is fully loaded
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true)
+      },
+
       partialize: (state) => ({
         searchQuery: state.searchQuery,
         selectedFlight: state.selectedFlight,
@@ -97,4 +111,3 @@ export const useFlightStore = create<FlightStore>()(
     }
   )
 )
-

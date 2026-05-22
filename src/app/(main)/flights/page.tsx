@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import ContinueButton from './ContinueButton'
 
 type FlightsPageProps = {
   searchParams: Promise<{
@@ -123,12 +124,7 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
                   </div>
 
                   <div className="flex items-end">
-                    <Link
-                      href={`/booking?flightId=${flight.id}`}
-                      className="inline-block rounded-md bg-black px-4 py-2 text-white"
-                    >
-                      Continue
-                    </Link>
+                  <ContinueButton flight={flight} />
                   </div>
                 </div>
               </div>
