@@ -1,11 +1,10 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useFlightStore } from '@/store/useFlightStore'
 
-function subscribe(_cb: () => void) { return () => {} }
 interface ConfirmationClientProps {
   flightId: string | null
 }
@@ -29,6 +28,7 @@ export default function ConfirmationClient({ flightId }: ConfirmationClientProps
   const passengerData  = useFlightStore((s) => s.passengerData)
   const selectedFlight = useFlightStore((s) => s.selectedFlight)
   const reset          = useFlightStore((s) => s.reset)
+  const hydrated       = useFlightStore((s) => s._hasHydrated)
 
   const [pageState, setPageState]       = useState<PageState>('idle')
   const [booking, setBooking]           = useState<BookingResult | null>(null)
@@ -36,9 +36,7 @@ export default function ConfirmationClient({ flightId }: ConfirmationClientProps
 
   const hasBooked = useRef(false)
 
-   const hydrated = useSyncExternalStore(subscribe, () => true, () => false)
-
-  // Booking effect — runs after hydration
+  // Booking effect — runs only after Zustand has rehydrated from localStorage
   useEffect(() => {
     if (!hydrated) return
     if (hasBooked.current) return
