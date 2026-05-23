@@ -4,336 +4,189 @@ import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useFlightStore } from '@/store/useFlightStore'
+import { CheckCircle2, Loader2, XCircle, AlertCircle } from 'lucide-react'
+import { toast } from 'sonner'
+import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
 
-interface ConfirmationClientProps {
-  flightId: string | null
-}
-
-interface BookingResult {
-  id: string
-  pnr_code: string
-  flight_id: string
-  seat_id: string
-  status: string
-  total_price: number
-  booked_at: string
-}
-
-
+interface ConfirmationClientProps { flightId: string | null }
+interface BookingResult { id: string; pnr_code: string; flight_id: string; seat_id: string; status: string; total_price: number; booked_at: string }
 type PageState = 'idle' | 'loading' | 'success' | 'error'
 
 export default function ConfirmationClient({ flightId }: ConfirmationClientProps) {
   const [supabase] = useState(() => createClient())
-
   const selectedFlight = useFlightStore((s) => s.selectedFlight)
-  const reset          = useFlightStore((s) => s.reset)
+  const reset = useFlightStore((s) => s.reset)
 
-  const [pageState, setPageState]       = useState<PageState>('idle')
-  const [booking, setBooking]           = useState<BookingResult | null>(null)
+  const [pageState, setPageState] = useState<PageState>('idle')
+  const [booking, setBooking] = useState<BookingResult | null>(null)
   const [errorMessage, setErrorMessage] = useState<string>('')
-
   const hasBooked = useRef(false)
-
   const _hasHydrated = useFlightStore((s) => s._hasHydrated)
 
   const handleBooking = useCallback(async () => {
     const state = useFlightStore.getState()
     if (!flightId || !state.selectedSeat || !state.passengerData) return
-
-    setPageState('loading')
-    setErrorMessage('')
-
+    setPageState('loading'); setErrorMessage('')
     try {
-      // Step 1 — RPC: lock seat, generate PNR, create booking (pending)
-      const { data: bookingData, error: rpcError } = await supabase.rpc(
-        'reserve_seat',
-        {
-          p_flight_id: flightId,
-          p_seat_id: state.selectedSeat.id,
-        }
-      )
-
+      const { data: bookingData, error: rpcError } = await supabase.rpc('reserve_seat', { p_flight_id: flightId, p_seat_id: state.selectedSeat.id })
       if (rpcError) throw new Error(getFriendlyError(rpcError.message))
-
       const newBooking = bookingData as BookingResult
-
-      // Step 2 — Insert passenger record
-      const { error: passengerError } = await supabase
-        .from('passengers')
-        .insert({
-          booking_id:  newBooking.id,
-          full_name:   state.passengerData.full_name,
-          passport_no: state.passengerData.passport_no ?? '',
-          nationality: state.passengerData.nationality,
-          dob:         state.passengerData.dob,
-        })
-
-      if (passengerError)
-        throw new Error('Failed to save passenger details. Please contact support.')
-
-      // Step 3 — Confirm booking: pending → confirmed
-      const { error: updateError } = await supabase
-        .from('bookings')
-        .update({ status: 'confirmed' })
-        .eq('id', newBooking.id)
-
-      if (updateError)
-        throw new Error('Failed to confirm booking. Please contact support.')
-
+      const { error: passengerError } = await supabase.from('passengers').insert({ booking_id: newBooking.id, full_name: state.passengerData.full_name, passport_no: state.passengerData.passport_no ?? '', nationality: state.passengerData.nationality, dob: state.passengerData.dob })
+      if (passengerError) throw new Error('Failed to save passenger details.')
+      const { error: updateError } = await supabase.from('bookings').update({ status: 'confirmed' }).eq('id', newBooking.id)
+      if (updateError) throw new Error('Failed to confirm booking.')
       setBooking({ ...newBooking, status: 'confirmed' })
       setPageState('success')
+      toast.success('Booking confirmed!', { description: `PNR: ${newBooking.pnr_code}` })
       setTimeout(() => reset(), 100)
-
     } catch (err) {
       setPageState('error')
-      setErrorMessage(
-        err instanceof Error ? err.message : 'An unexpected error occurred.'
-      )
-      
+      const msg = err instanceof Error ? err.message : 'An unexpected error occurred.'
+      setErrorMessage(msg)
+      toast.error('Booking failed', { description: msg })
       hasBooked.current = false
     }
   }, [flightId, reset, supabase])
 
   useEffect(() => {
     const state = useFlightStore.getState()
-    if (!_hasHydrated) return
-    if (hasBooked.current) return
-    if (!flightId || !state.selectedSeat || !state.passengerData) return
-
+    if (!_hasHydrated || hasBooked.current || !flightId || !state.selectedSeat || !state.passengerData) return
     hasBooked.current = true
-    setTimeout(() => {
-      void handleBooking()
-    }, 0)
+    setTimeout(() => { void handleBooking() }, 0)
   }, [_hasHydrated, flightId, handleBooking])
 
   const selectedSeat = useFlightStore((s) => s.selectedSeat)
   const passengerData = useFlightStore((s) => s.passengerData)
 
-// --- Hydration Guard ---
-  if (!_hasHydrated) {
-    return (
-      <main className="flex min-h-screen items-center justify-center">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-black" />
-      </main>
-    )
-  }
+  // Hydrating
+  if (!_hasHydrated) return (
+    <div className="flex min-h-[60vh] items-center justify-center">
+      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+    </div>
+  )
 
-  // --- Missing Data Guard ---
-  // Catch missing data FIRST, unless the booking succeeded (success clears the store)
-  if (pageState !== 'success' && (!flightId || !selectedSeat || !passengerData)) {
-    return (
-      <main className="min-h-screen px-4 py-8">
-        <div className="space-y-2 text-center">
-          <p className="text-red-600 font-medium">Incomplete booking information.</p>
-          <p className="text-sm text-gray-500">We couldnt find your selected seat or passenger details.</p>
-          <div className="pt-4">
-            <Link href="/" className="rounded-md bg-black px-4 py-2 text-sm text-white hover:bg-gray-900">
-              Start Search Again
-            </Link>
-          </div>
-        </div>
-      </main>
-    )
-  }
+  // Missing data
+  if (pageState !== 'success' && (!flightId || !selectedSeat || !passengerData)) return (
+    <div className="flex min-h-[60vh] items-center justify-center px-4">
+      <Card className="max-w-sm text-center">
+        <CardContent className="py-8">
+          <AlertCircle className="mx-auto mb-3 h-8 w-8 text-destructive" />
+          <p className="font-semibold">Incomplete booking information</p>
+          <p className="mt-1 text-sm text-muted-foreground">We couldn&apos;t find your seat or passenger details.</p>
+          <Button asChild className="mt-4">
+            <Link href="/">Start Again</Link>
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  )
 
-  // --- Error ---
-  if (pageState === 'error') {
-    return (
-      <main className="min-h-screen px-4 py-8">
-        <div className="mx-auto max-w-md space-y-4 rounded-xl border border-red-200 bg-red-50 p-6">
-          <h1 className="text-lg font-semibold text-red-700">Booking Failed</h1>
-          <p className="text-sm text-red-600">{errorMessage}</p>
-          <div className="flex gap-3">
-            <button
-              onClick={() => {
-                setPageState('idle')
-                handleBooking()
-              }}
-              className="rounded-md bg-black px-4 py-2 text-sm text-white hover:bg-gray-900"
-            >
-              Try Again
-            </button>
-            <Link
-              href={`/booking?flightId=${flightId}`}
-              className="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-            >
-              Choose Different Seat
-            </Link>
+  // Error
+  if (pageState === 'error') return (
+    <div className="mx-auto max-w-md px-4 py-12">
+      <Card>
+        <CardContent className="py-8 text-center">
+          <XCircle className="mx-auto mb-3 h-8 w-8 text-destructive" />
+          <h1 className="text-lg font-bold">Booking Failed</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{errorMessage}</p>
+          <div className="mt-4 flex gap-3 justify-center">
+            <Button onClick={() => { setPageState('idle'); handleBooking() }}>Try Again</Button>
+            <Button asChild variant="outline">
+              <Link href={`/booking?flightId=${flightId}`}>Change Seat</Link>
+            </Button>
           </div>
-        </div>
-      </main>
-    )
-  }
+        </CardContent>
+      </Card>
+    </div>
+  )
 
-  // --- Loading ---
-  if (pageState === 'loading' || pageState === 'idle') {
-    return (
-      <main className="flex min-h-screen items-center justify-center px-4">
-        <div className="space-y-3 text-center">
-          <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-black" />
-          <p className="text-sm text-gray-600">Reserving your seat...</p>
+  // Loading
+  if (pageState === 'loading' || pageState === 'idle') return (
+    <div className="flex min-h-[60vh] items-center justify-center px-4">
+      <div className="text-center space-y-3">
+        <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
+        <div>
+          <p className="font-semibold">Reserving your seat…</p>
+          <p className="text-sm text-muted-foreground">Please don&apos;t close this page</p>
         </div>
-      </main>
-    )
-  }
-  // --- Success ---
-  if (!selectedSeat || !passengerData) {
-    return (
-      <main className="min-h-screen px-4 py-8">
-        <div className="space-y-2 text-center">
-          <p className="text-red-600 font-medium">Incomplete booking details.</p>
-          <p className="text-sm text-gray-500">Your booking was confirmed, but we could not load the selected seat or passenger details.</p>
-          <div className="pt-4">
-            <Link href="/" className="rounded-md bg-black px-4 py-2 text-sm text-white hover:bg-gray-900">
-              Return home
-            </Link>
-          </div>
-        </div>
-      </main>
-    )
-  }
+      </div>
+    </div>
+  )
+
+  // Success — guard against cleared store
+  if (!selectedSeat || !passengerData) return (
+    <div className="flex min-h-[60vh] items-center justify-center px-4">
+      <Card className="max-w-sm text-center">
+        <CardContent className="py-8">
+          <CheckCircle2 className="mx-auto mb-3 h-8 w-8 text-emerald-500" />
+          <p className="font-semibold">Booking confirmed!</p>
+          <Button asChild className="mt-4">
+            <Link href="/">Return home</Link>
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  )
 
   return (
-    <main className="min-h-screen px-4 py-8">
-      <div className="mx-auto max-w-xl space-y-6">
+    <div className="mx-auto max-w-md px-4 py-8 space-y-5">
+      {/* Success header */}
+      <div className="text-center">
+        <CheckCircle2 className="mx-auto mb-3 h-10 w-10 text-emerald-500" />
+        <h1 className="text-2xl font-bold">Booking Confirmed</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Your seat has been reserved successfully.</p>
+      </div>
 
-        {/* Success Banner */}
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-6 text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-2xl">
-            ✓
-          </div>
-          <h1 className="text-xl font-semibold text-emerald-800">Booking Confirmed!</h1>
-          <p className="mt-1 text-sm text-emerald-600">
-            Your seat has been reserved successfully.
-          </p>
-        </div>
+      {/* PNR */}
+      <Card>
+        <CardContent className="py-5 text-center">
+          <p className="text-xs text-muted-foreground mb-2 uppercase tracking-wide font-medium">Booking Reference</p>
+          <p className="font-mono text-2xl font-bold tracking-widest">{booking?.pnr_code}</p>
+        </CardContent>
+      </Card>
 
-        {/* PNR */}
-        <div className="rounded-xl border bg-white p-6 text-center shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-widest text-gray-500">
-            PNR Code
-          </p>
-          <p className="mt-2 font-mono text-4xl font-bold tracking-widest text-black">
-            {booking?.pnr_code}
-          </p>
-          <p className="mt-1 text-xs text-gray-400">
-            Save this code to manage your booking
-          </p>
-        </div>
-
-        {/* Full Details */}
-        <div className="rounded-xl border bg-white p-5 shadow-sm">
-          <h2 className="mb-3 text-sm font-semibold text-gray-700">Booking Details</h2>
-
-          <div className="divide-y text-sm">
-
-            {/* Flight */}
+      {/* Details */}
+      <Card>
+        <CardContent className="py-5">
+          <h2 className="text-sm font-semibold mb-3">Booking Details</h2>
+          <div className="space-y-2.5 text-sm">
             {selectedFlight && (
               <>
-                <div className="flex justify-between py-2">
-                  <span className="text-gray-500">Flight</span>
-                  <span className="font-medium">{selectedFlight.flight_no}</span>
-                </div>
-                <div className="flex justify-between py-2">
-                  <span className="text-gray-500">Route</span>
-                  <span className="font-medium">
-                    {selectedFlight.origin} → {selectedFlight.destination}
-                  </span>
-                </div>
-                <div className="flex justify-between py-2">
-                  <span className="text-gray-500">Departure</span>
-                  <span className="font-medium">
-                    {new Date(selectedFlight.departs_at).toLocaleString('en-IN', {
-                      dateStyle: 'medium',
-                      timeStyle: 'short',
-                    })}
-                  </span>
-                </div>
-                <div className="flex justify-between py-2">
-                  <span className="text-gray-500">Arrival</span>
-                  <span className="font-medium">
-                    {new Date(selectedFlight.arrives_at).toLocaleString('en-IN', {
-                      dateStyle: 'medium',
-                      timeStyle: 'short',
-                    })}
-                  </span>
-                </div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Flight</span><span className="font-medium">{selectedFlight.flight_no}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Route</span><span className="font-medium">{selectedFlight.origin} → {selectedFlight.destination}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Departure</span><span className="font-medium">{new Date(selectedFlight.departs_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</span></div>
               </>
             )}
-
-            {/* Seat */}
-            <div className="flex justify-between py-2">
-              <span className="text-gray-500">Seat</span>
-              <span className="font-medium">
-                {selectedSeat.seat_number}{' '}
-                <span className="capitalize text-gray-400">({selectedSeat.class})</span>
-              </span>
-            </div>
-
-            {/* Passenger */}
-            <div className="flex justify-between py-2">
-              <span className="text-gray-500">Passenger</span>
-              <span className="font-medium">{passengerData.full_name}</span>
-            </div>
-            <div className="flex justify-between py-2">
-              <span className="text-gray-500">Nationality</span>
-              <span className="font-medium">{passengerData.nationality}</span>
-            </div>
-            <div className="flex justify-between py-2">
-              <span className="text-gray-500">Date of Birth</span>
-              <span className="font-medium">
-                {new Date(passengerData.dob).toLocaleDateString('en-IN', {
-                  dateStyle: 'medium',
-                })}
-              </span>
-            </div>
-
-            {/* Status + Price */}
-            <div className="flex justify-between py-2">
-              <span className="text-gray-500">Status</span>
-              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                Confirmed
-              </span>
-            </div>
-            <div className="flex justify-between py-2">
-              <span className="text-gray-500">Total Paid</span>
-              <span className="font-semibold text-black">₹{booking?.total_price}</span>
-            </div>
-
+            <div className="flex justify-between"><span className="text-muted-foreground">Seat</span><span className="font-medium">{selectedSeat.seat_number} <span className="capitalize text-muted-foreground">({selectedSeat.class})</span></span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Passenger</span><span className="font-medium">{passengerData.full_name}</span></div>
+            <Separator />
+            <div className="flex justify-between"><span className="text-muted-foreground">Status</span><Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">Confirmed</Badge></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Total Paid</span><span className="text-lg font-bold">₹{booking?.total_price?.toLocaleString('en-IN')}</span></div>
           </div>
-        </div>
+        </CardContent>
+      </Card>
 
-        {/* Actions */}
-        <div className="flex gap-3">
-          <Link
-            href="/bookings"
-            className="flex-1 rounded-md bg-black px-4 py-2 text-center text-sm text-white hover:bg-gray-900"
-          >
-            My Bookings
-          </Link>
-          <Link
-            href="/"
-            className="flex-1 rounded-md border border-gray-300 px-4 py-2 text-center text-sm text-gray-700 hover:bg-gray-50"
-          >
-            Search More Flights
-          </Link>
-        </div>
-
+      {/* Actions */}
+      <div className="flex gap-3">
+        <Button asChild className="flex-1">
+          <Link href="/my-bookings">My Bookings</Link>
+        </Button>
+        <Button asChild variant="outline" className="flex-1">
+          <Link href="/">Search More</Link>
+        </Button>
       </div>
-    </main>
+    </div>
   )
 }
 
 function getFriendlyError(message: string): string {
-  if (message.includes('seat_unavailable') || message.includes('seat_already_booked'))
-    return 'This seat was just booked by someone else. Please choose a different seat.'
-  if (message.includes('not_authenticated'))
-    return 'You must be logged in to complete a booking.'
-  if (message.includes('flight_not_bookable'))
-    return 'This flight is no longer available for booking.'
-  if (message.includes('flight_not_found'))
-    return 'Flight not found. Please search again.'
-  if (message.includes('seat_not_on_flight'))
-    return 'Seat does not belong to this flight. Please try again.'
+  if (message.includes('seat_unavailable') || message.includes('seat_already_booked')) return 'This seat was just booked. Please choose a different seat.'
+  if (message.includes('not_authenticated')) return 'You must be logged in to complete a booking.'
+  if (message.includes('flight_not_bookable')) return 'This flight is no longer available for booking.'
+  if (message.includes('flight_not_found')) return 'Flight not found. Please search again.'
+  if (message.includes('seat_not_on_flight')) return 'Seat does not belong to this flight.'
   return message
 }

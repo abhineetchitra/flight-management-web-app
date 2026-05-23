@@ -1,25 +1,25 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { ArrowLeft, Clock, PlaneTakeoff } from 'lucide-react'
+import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
 import ContinueButton from './ContinueButton'
 
 type FlightsPageProps = {
-  searchParams: Promise<{
-    origin?: string
-    destination?: string
-    date?: string
-    passengers?: string
-  }>
+  searchParams: Promise<{ origin?: string; destination?: string; date?: string; passengers?: string }>
 }
 
 function formatDuration(departsAt: string, arrivesAt: string) {
-  const start = new Date(departsAt).getTime()
-  const end = new Date(arrivesAt).getTime()
-  const diffMs = end - start
-
+  const diffMs = new Date(arrivesAt).getTime() - new Date(departsAt).getTime()
   const hours = Math.floor(diffMs / (1000 * 60 * 60))
   const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
-
   return `${hours}h ${minutes}m`
+}
+
+function formatTime(dateStr: string) {
+  return new Date(dateStr).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
 }
 
 export default async function FlightsPage({ searchParams }: FlightsPageProps) {
@@ -29,111 +29,116 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
   const date = params.date ?? ''
 
   const supabase = await createClient()
-
   const startDate = new Date(`${date}T00:00:00`)
   const endDate = new Date(startDate)
   endDate.setDate(endDate.getDate() + 1)
 
   const { data: flights, error } = await supabase
-    .from('flights')
-    .select('*')
-    .eq('origin', origin)
-    .eq('destination', destination)
-    .eq('status', 'scheduled')
-    .gte('departs_at', startDate.toISOString())
-    .lt('departs_at', endDate.toISOString())
+    .from('flights').select('*')
+    .eq('origin', origin).eq('destination', destination).eq('status', 'scheduled')
+    .gte('departs_at', startDate.toISOString()).lt('departs_at', endDate.toISOString())
     .order('departs_at', { ascending: true })
 
   const filteredFlights = flights ?? []
 
   return (
-    <main className="min-h-screen px-4 py-8">
-      <div className="mx-auto max-w-5xl space-y-6">
-        <div>
-          <h1 className="text-2xl font-semibold">Flight Results</h1>
-          <p className="text-sm text-gray-600">
-            {origin} → {destination} | {date}
-          </p>
-        </div>
+    <div className="mx-auto max-w-3xl px-4 py-8">
+      {/* Header */}
+      <div className="mb-6">
+        <Button variant="ghost" size="sm" asChild className="mb-2 -ml-2">
+          <Link href="/"><ArrowLeft className="mr-1 h-4 w-4" />Back to search</Link>
+        </Button>
+        <h1 className="text-2xl font-bold">
+          {origin} → {destination}
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          {date} · {filteredFlights.length} flight{filteredFlights.length !== 1 ? 's' : ''} available
+        </p>
+      </div>
 
-        {error && (
-          <p className="text-red-600">Failed to load flights: {error.message}</p>
-        )}
+      {/* Error */}
+      {error && (
+        <Card className="border-destructive bg-destructive/5">
+          <CardContent className="py-4 text-sm text-destructive">
+            Failed to load flights: {error.message}
+          </CardContent>
+        </Card>
+      )}
 
-        {filteredFlights.length === 0 ? (
-          <div className="rounded-xl border p-6">
-            <p>No matching flights found.</p>
-            <Link href="/" className="mt-3 inline-block text-blue-600 underline">
-              Back to search
-            </Link>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {filteredFlights.map((flight) => (
-              <div
-                key={flight.id}
-                className="rounded-xl border p-5 shadow-sm"
-              >
-                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                  <div className="space-y-1">
-                    <h2 className="text-lg font-semibold">{flight.flight_no}</h2>
-                    <p className="text-sm text-gray-600">
-                      {flight.origin} → {flight.destination}
-                    </p>
-                  </div>
+      {/* No results */}
+      {filteredFlights.length === 0 && !error && (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <PlaneTakeoff className="mx-auto mb-3 h-10 w-10 text-muted-foreground/40" />
+            <h2 className="text-lg font-semibold">No flights found</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              No flights from {origin} to {destination} on {date}.
+            </p>
+            <Button asChild className="mt-4">
+              <Link href="/">Modify Search</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
-                  <div className="text-left md:text-right">
-                    <p className="text-sm text-gray-500">Starting from</p>
-                    <p className="text-2xl font-bold">₹{flight.base_price}</p>
-                  </div>
+      {/* Flight cards */}
+      <div className="space-y-3">
+        {filteredFlights.map((flight) => (
+          <Card key={flight.id} className="transition-shadow hover:shadow-md">
+            <CardContent className="p-4 sm:p-5">
+              {/* Top row: flight info + price */}
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <div>
+                  <p className="font-semibold">{flight.flight_no}</p>
+                  <p className="text-xs text-muted-foreground">{flight.aircraft_type || 'Commercial Aircraft'}</p>
                 </div>
-
-                <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                  <div>
-                    <p className="text-xs text-gray-500">Departure</p>
-                    <p className="font-medium">
-                      {new Date(flight.departs_at).toLocaleString()}
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-xs text-gray-500">Arrival</p>
-                    <p className="font-medium">
-                      {new Date(flight.arrives_at).toLocaleString()}
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-xs text-gray-500">Duration</p>
-                    <p className="font-medium">
-                      {formatDuration(flight.departs_at, flight.arrives_at)}
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-xs text-gray-500">Class</p>
-                    <div className="flex flex-wrap gap-2">
-                      <span className="rounded-full border px-2 py-1 text-xs">
-                        Economy
-                      </span>
-                      <span className="rounded-full border px-2 py-1 text-xs">
-                        Business
-                      </span>
-                      <span className="rounded-full border px-2 py-1 text-xs">
-                        First
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-end">
-                  <ContinueButton flight={flight} />
-                  </div>
+                <div className="text-right">
+                  <p className="text-xl font-bold">₹{flight.base_price.toLocaleString('en-IN')}</p>
+                  <p className="text-xs text-muted-foreground">per person</p>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
+
+              <Separator className="mb-4" />
+
+              {/* Timeline row */}
+              <div className="flex items-center gap-3 mb-4">
+                <div className="text-center">
+                  <p className="text-lg font-semibold tabular-nums">{formatTime(flight.departs_at)}</p>
+                  <p className="text-xs font-medium text-muted-foreground">{flight.origin}</p>
+                </div>
+
+                <div className="flex flex-1 flex-col items-center gap-0.5">
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <Clock className="h-3 w-3" />
+                    {formatDuration(flight.departs_at, flight.arrives_at)}
+                  </div>
+                  <div className="flex w-full items-center">
+                    <div className="h-px flex-1 bg-border" />
+                    <PlaneTakeoff className="mx-1.5 h-3.5 w-3.5 text-primary" />
+                    <div className="h-px flex-1 bg-border" />
+                  </div>
+                  <p className="text-xs text-muted-foreground">Non-stop</p>
+                </div>
+
+                <div className="text-center">
+                  <p className="text-lg font-semibold tabular-nums">{formatTime(flight.arrives_at)}</p>
+                  <p className="text-xs font-medium text-muted-foreground">{flight.destination}</p>
+                </div>
+              </div>
+
+              {/* Bottom: badges + button */}
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-wrap gap-1.5">
+                  <Badge variant="outline" className="text-xs">Economy</Badge>
+                  <Badge variant="outline" className="text-xs">Business</Badge>
+                  <Badge variant="outline" className="text-xs">First</Badge>
+                </div>
+                <ContinueButton flight={flight} />
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
-    </main>
+    </div>
   )
 }

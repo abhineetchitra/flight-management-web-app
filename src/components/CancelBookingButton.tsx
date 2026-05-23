@@ -3,87 +3,58 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { X, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 
-interface CancelBookingButtonProps {
-  bookingId: string
-}
-
-export default function CancelBookingButton({
-  bookingId,
-}: CancelBookingButtonProps) {
+export default function CancelBookingButton({ bookingId }: { bookingId: string }) {
   const supabase = createClient()
   const router = useRouter()
-
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
-  async function handleCancelBooking() {
+  async function handleCancel() {
     setLoading(true)
-    setError(null)
-
-    const { error } = await supabase.rpc('cancel_booking_and_free_seat', {
-      p_booking_id: bookingId,
-    })
-
+    const { error } = await supabase.rpc('cancel_booking_and_free_seat', { p_booking_id: bookingId })
     if (error) {
-      setError(error.message)
+      toast.error('Failed to cancel booking', { description: error.message })
       setLoading(false)
       return
     }
-
+    toast.success('Booking cancelled', { description: 'Your seat has been released.' })
     setLoading(false)
     setOpen(false)
     router.refresh()
   }
 
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700"
-      >
-        Cancel Booking
-      </button>
-
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg">
-            <h2 className="text-lg font-semibold text-gray-900">
-              Cancel this booking?
-            </h2>
-
-            <p className="mt-2 text-sm text-gray-600">
-              This will mark the booking as cancelled and free the selected seat.
-            </p>
-
-            {error && (
-              <p className="mt-3 text-sm text-red-600">{error}</p>
-            )}
-
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                disabled={loading}
-                className="rounded-md border px-4 py-2 text-sm text-gray-700"
-              >
-                Keep Booking
-              </button>
-
-              <button
-                type="button"
-                onClick={handleCancelBooking}
-                disabled={loading}
-                className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-              >
-                {loading ? 'Cancelling...' : 'Confirm Cancel'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <AlertDialogTrigger asChild>
+        <Button variant="destructive" size="sm">
+          <X className="mr-1.5 h-3.5 w-3.5" />
+          Cancel
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Cancel this booking?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This action cannot be undone. The booking will be marked as cancelled and the seat will be released for other passengers.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={loading}>Keep Booking</AlertDialogCancel>
+          <AlertDialogAction onClick={handleCancel} disabled={loading} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            {loading ? (
+              <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Cancelling…</>
+            ) : 'Cancel Booking'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }

@@ -3,56 +3,90 @@
 import SeatGrid from '@/components/SeatGrid'
 import { useFlightStore } from '@/store/useFlightStore'
 import { useRouter } from 'next/navigation'
+import { ArrowRight, AlertCircle } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent } from '@/components/ui/card'
+import { Separator } from '@/components/ui/separator'
 
-interface BookingPageClientProps {
-  flightId: string | null
-}
+interface BookingPageClientProps { flightId: string | null }
 
-export default function BookingPageClient({
-  flightId,
-}: BookingPageClientProps) {
+const steps = ['Search', 'Select Seat', 'Passenger Details', 'Confirm']
+
+export default function BookingPageClient({ flightId }: BookingPageClientProps) {
   const router = useRouter()
   const selectedSeat = useFlightStore((s) => s.selectedSeat)
   const setBookingStep = useFlightStore((s) => s.setBookingStep)
+  const selectedFlight = useFlightStore((s) => s.selectedFlight)
 
   function handleContinue() {
     if (!selectedSeat || !flightId) return
     setBookingStep('passenger-details')
-    // ✅ pass both flightId AND seatId
-    router.push(
-      `/passenger-details?flightId=${flightId}&seatId=${selectedSeat.id}`
-    )
+    router.push(`/passenger-details?flightId=${flightId}&seatId=${selectedSeat.id}`)
   }
 
   if (!flightId) {
     return (
-      <main className="min-h-screen px-4 py-8">
-        <p className="text-red-600">Missing flight ID.</p>
-      </main>
+      <div className="flex min-h-[60vh] items-center justify-center px-4">
+        <Card className="max-w-sm text-center">
+          <CardContent className="py-8">
+            <AlertCircle className="mx-auto mb-3 h-8 w-8 text-destructive" />
+            <p className="font-semibold">Missing flight ID</p>
+            <p className="mt-1 text-sm text-muted-foreground">Please search and select a flight first.</p>
+          </CardContent>
+        </Card>
+      </div>
     )
   }
 
   return (
-    <main className="min-h-screen px-4 py-8">
-      <div className="mx-auto max-w-6xl space-y-6">
-        <div>
-          <h1 className="text-2xl font-semibold">Select Your Seat</h1>
-          <p className="text-sm text-gray-600">
-            Choose a seat before continuing to passenger details.
+    <div className="mx-auto max-w-4xl px-4 py-8">
+      {/* Step breadcrumb */}
+      <nav className="mb-6 flex items-center gap-1.5 text-sm text-muted-foreground">
+        {steps.map((step, i) => (
+          <span key={step} className="flex items-center gap-1.5">
+            {i > 0 && <span className="text-border">›</span>}
+            <span className={i === 1 ? 'font-medium text-foreground' : ''}>{step}</span>
+          </span>
+        ))}
+      </nav>
+
+      {/* Header */}
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold">Select Your Seat</h1>
+        {selectedFlight && (
+          <p className="text-sm text-muted-foreground">
+            {selectedFlight.flight_no} · {selectedFlight.origin} → {selectedFlight.destination}
           </p>
-        </div>
-
-        <SeatGrid flightId={flightId} />
-
-        <button
-          type="button"
-          onClick={handleContinue}
-          disabled={!selectedSeat}
-          className="rounded-md bg-black px-4 py-2 text-white disabled:opacity-50"
-        >
-          Continue
-        </button>
+        )}
       </div>
-    </main>
+
+      {/* Seat grid */}
+      <SeatGrid flightId={flightId} />
+
+      <Separator className="my-6" />
+
+      {/* Bottom bar */}
+      <div className="flex items-center justify-between">
+        <div>
+          {selectedSeat ? (
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="text-sm">
+                Seat {selectedSeat.seat_number}
+              </Badge>
+              <span className="text-sm text-muted-foreground capitalize">
+                {selectedSeat.class} · +₹{selectedSeat.extra_fee}
+              </span>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Pick a seat to continue</p>
+          )}
+        </div>
+        <Button onClick={handleContinue} disabled={!selectedSeat}>
+          Continue
+          <ArrowRight className="ml-1.5 h-4 w-4" />
+        </Button>
+      </div>
+    </div>
   )
 }
