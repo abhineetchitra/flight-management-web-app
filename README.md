@@ -2,8 +2,6 @@
 
 A full-stack, production-grade flight booking web application built as part of an internship technical assignment.
 
-**Live Demo:** _Deploy to Vercel and add URL here_
-
 ---
 
 ## Tech Stack
@@ -105,8 +103,9 @@ Open [http://localhost:3000](http://localhost:3000)
 A test user is seeded via `015_seed_test_user.sql`. After running that migration, you can also sign up manually at `/auth/signup`.
 
 ```
-Email:    test@skybook.dev
-Password: Test@1234
+Test User:
+Email:    test@flight.test
+Password: TestPassword123!
 ```
 
 ---
@@ -157,7 +156,6 @@ Manages the entire booking journey state.
 | `selectedSeat` | `Seat \| null` | ✅ Yes | Optimistically selected before DB write confirms |
 | `bookingStep` | `BookingStep` | ✅ Yes | Current step in the booking flow |
 | `passengerData` | `PassengerData \| null` | ✅ Yes (partial) | `passport_no` **excluded** via `partialize` |
-| `_hasHydrated` | `boolean` | ❌ No | Internal hydration flag — never stored |
 
 **Key design decisions:**
 - `partialize` excludes `passport_no` from `localStorage` to avoid storing sensitive data
@@ -216,23 +214,56 @@ supabase/
 
 ---
 
-## Deployment (Vercel)
+---
 
-1. Push to GitHub
-2. Go to [vercel.com](https://vercel.com) → Import project
-3. Add environment variables:
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-4. Deploy
+## Trade-offs & What I Would Have Done Differently
+
+This section documents honest decisions made under time constraints, and how I would improve each one given more time.
+
+### 1. PWA (Bonus Task) — Not Implemented
+
+**What I did:** Focused on core functionality — search, booking, seat map, cancel, reschedule — over the PWA bonus.
+
+**What I would have done:** Configured `next-pwa` with a `manifest.json` (name, icons at 192×192 and 512×512, `display: standalone`). Added a `StaleWhileRevalidate` cache strategy for flight search results and `CacheFirst` for static assets. Built an `/offline` fallback page and an install prompt banner for mobile visitors. The My Bookings page would cache the last API response so users can read it without connectivity.
+
+**Trade-off:** PWA setup introduces `next-pwa` config complexity and service worker debugging that is time-consuming to get right. Given a full week, I would have implemented and Lighthouse-audited it properly.
 
 ---
 
-## Submission Checklist
+### 2. Form Validation — Basic vs. Zod + react-hook-form
 
-- [x] Public GitHub repository with descriptive commit history
-- [x] `.env.example` with all Supabase environment variables listed
-- [x] Supabase migration SQL files in `/supabase/migrations`
-- [x] Seed script with flights, seats, and test user (`013` → `015` migrations)
-- [x] README with local setup steps, Supabase config, and Zustand store explanation
-- [ ] Deployed Vercel link _(add after deployment)_
-- [ ] Lighthouse PWA screenshot _(bonus task)_
+**What I did:** Used controlled inputs with manual state validation on the passenger details form.
+
+**What I would have done:** Integrated `zod` schema validation with `react-hook-form` and shadcn's `Form` component. This gives field-level error messages, better accessibility (`aria-invalid`, `aria-describedby`), and a single source of truth for validation rules. The schema would also be shared with the RPC input types.
+
+**Trade-off:** `react-hook-form` + `zod` adds setup time but pays off on any form with more than 3 fields. For a production app I would always use it.
+
+---
+
+### 3. Reschedule Fee — Hardcoded vs. Dynamic
+
+**What I did:** The reschedule fee is hardcoded as ₹1500 in the RPC function.
+
+**What I would have done:** Calculated the fee dynamically as the price difference between the old and new flight (`new_flight.base_price - old_flight.base_price`), with a minimum floor of ₹500. This surfaces the actual cost difference to the user before they confirm, making it a more honest UX.
+
+**Trade-off:** Dynamic fee calculation requires the RPC to either preview the fee before committing, or return it in the same response. The current single-call design is simpler but less transparent to the user.
+
+---
+
+### 4. Seat Map — Flat Grid vs. Real Aircraft Layout
+
+**What I did:** Rendered a flat grid of seats grouped by class (First / Business / Economy) with colour coding.
+
+**What I would have done:** Modelled the actual aircraft layout — rows with an aisle gap between column groups (e.g. 3-3 for economy, 2-2 for business) — so the grid visually resembles a real cabin. Each seat would be labelled with its row number and column letter (1A, 1B, 1C | 1D, 1E, 1F).
+
+**Trade-off:** A proper aisle-split layout requires knowing the aircraft configuration per flight, which is not in the current schema. I would add an `aircraft_config` JSON column to the `flights` table to drive it.
+
+---
+
+### 5. Multi-Passenger Booking — Not Implemented
+
+**What I did:** The booking flow supports one passenger per booking.
+
+**What I would have done:** If `passengerCount > 1` from the search query, looped through seat selection and passenger details once per passenger, collecting all into an array before a single batched RPC call that reserves all seats atomically. The `passengers` table already supports this — one row per passenger linked to a booking.
+
+**Trade-off:** Multi-passenger flow significantly increases state complexity in `useFlightStore` (array of seats, array of passenger forms, multi-step validation). Scoping to single-passenger first was the right call for time, but the schema supports expansion.
